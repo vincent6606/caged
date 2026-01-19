@@ -31,3 +31,9 @@ This application is built with **Next.js**, which makes it "Zero Configuration" 
 
 ## Future Updates
 - Every time you `git push` to your `main` branch, Vercel will **automatically** re-deploy your new changes.
+
+## Domain Names
+- **Free Default**: Vercel gives you a free URL like `caged-app.vercel.app`.
+- **Custom Domain**: You can buy a custom domain (e.g., `guitar-architect.com`) directly inside Vercel or connect one you already own (from GoDaddy, Namecheap, etc.).
+    - Go to **Settings** -> **Domains** in your Vercel project dashboard to configure this.
+
