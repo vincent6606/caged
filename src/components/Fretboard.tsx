@@ -35,7 +35,7 @@ export function Fretboard({ notes, onNoteClick, onNoteDoubleClick, onNoteHover }
     const STRING_LABELS = ['E', 'B', 'G', 'D', 'A', 'E'];
 
     return (
-        <div className="overflow-x-auto pb-4 scrollbar-thin">
+        <div id="fretboard-container" className="overflow-x-auto pb-4 scrollbar-thin bg-white">
             <svg width={WIDTH} height={HEIGHT} className="select-none min-w-[1000px]">
 
                 {/* 0. String Labels (Far Left) */}
@@ -171,13 +171,13 @@ export function Fretboard({ notes, onNoteClick, onNoteDoubleClick, onNoteHover }
 
                     return (
                         <g key={`note-${i}`} style={{ pointerEvents: 'none' }}>
-                            <circle cx={cx} cy={cy} r={12} fill={color} stroke="white" strokeWidth={2} />
+                            <circle cx={cx} cy={cy} r={18} fill={color} stroke="white" strokeWidth={2} />
                             <text
-                                x={cx} y={cy + 4}
+                                x={cx} y={cy + 5}
                                 textAnchor="middle"
                                 fill={['R', '5'].includes(n.label) ? 'white' : 'black'}
-                                fontSize={9}
-                                fontWeight={800}
+                                fontSize={14}
+                                fontWeight={900}
                                 fontFamily="sans-serif"
                             >
                                 {n.label}

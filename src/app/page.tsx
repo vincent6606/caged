@@ -27,7 +27,8 @@ export default function Home() {
     patternMode: 'box',
     playbackSpeed: 1,
     isPlaying: false,
-    customNotes: []
+    customNotes: [],
+    selectedNote: null
   });
 
   const [activeTrack, setActiveTrack] = useState(BACKING_TRACKS[2].id);
@@ -66,7 +67,8 @@ export default function Home() {
 
     setState(prev => ({
       ...prev,
-      root: chromaticIdx
+      root: chromaticIdx,
+      selectedNote: { stringIdx, fret }
     }));
   };
 
@@ -92,7 +94,8 @@ export default function Home() {
     setState(prev => ({
       ...prev,
       root: chromaticIdx,
-      shape: newShape
+      shape: newShape,
+      selectedNote: { stringIdx, fret }
     }));
   };
 
@@ -126,11 +129,90 @@ export default function Home() {
       : 'bg-white hover:bg-slate-100 shadow-[2px_2px_0_black]'
     }`;
 
-  const getShapeBtnClass = (isActive: boolean) =>
-    `w-12 h-12 flex items-center justify-center font-bold text-xl border-2 border-[var(--border-dark)] transition-all ${isActive
-      ? 'bg-[#2563eb] text-white shadow-inner translate-y-[2px]'
-      : 'bg-white hover:bg-slate-100 shadow-[2px_2px_0_black] hover:shadow-[1px_1px_0_black] hover:translate-y-[1px]'
-    }`;
+
+  // Helper to play notes as a strum (Restricted to 4 notes: R, 3, 5, 7)
+  const playChordNotes = (notes: ReturnType<typeof calculateFretboardState>) => {
+    // 0. Helper to get Pitch Score
+    const getPitchScore = (n: typeof notes[0]) => {
+      // String 0 = Low E, String 5 = High E (Wait, earlier we determined String 0 is Low E? 
+      // Let's RE-VERIFY string indices from constants.ts or previous verification.)
+      // My verification script used: String 0 = Low E implies ascending pitch with index.
+      // But let's look at `TUNING` in constants...
+      // CONSTANTS: TUNING = [4, 9, 14, 19, 23, 28] -> E, A, D, G, B, E
+      // So index 0 = Low E (pitch 4). index 5 = High E (pitch 28).
+      // So HIGHER index = HIGHER pitch (mostly).
+      // Pitch = TUNING[s] + fret.
+      const TUNING = [4, 9, 14, 19, 23, 28];
+      return TUNING[n.stringIdx] + n.fret;
+    };
+
+    // 1. Sort all available notes by pitch (Low -> High)
+    const sortedAll = [...notes].sort((a, b) => getPitchScore(a) - getPitchScore(b));
+
+    // 2. Find the Anchor: Lowest Root
+    const rootNote = sortedAll.find(n => n.interval === 0);
+    if (!rootNote) return; // Should not happen if shape is valid
+
+    const sequence = [rootNote];
+    let currentPitch = getPitchScore(rootNote);
+
+    // 3. Find next intervals in strict ascending order
+    // Targets: 3rd (3/4), 5th (6/7/8), 7th (9/10/11)
+    const targets = [
+      [3, 4],       // Thirds
+      [6, 7, 8],    // Fifths
+      [9, 10, 11]   // Sevenths
+    ];
+
+    targets.forEach(targetIntervals => {
+      // Find the first note in sorted list that creates this interval AND is higher than current pitch
+      const nextNote = sortedAll.find(n =>
+        targetIntervals.includes(n.interval) && getPitchScore(n) > currentPitch
+      );
+
+      if (nextNote) {
+        sequence.push(nextNote);
+        currentPitch = getPitchScore(nextNote);
+      }
+    });
+
+    // 4. Play
+    sequence.forEach((note, i) => {
+      const delay = i * 150; // Slower arpeggio for clarity
+      const freq = getNoteFrequency(note.stringIdx, note.fret);
+      setTimeout(() => {
+        audio.playTone(freq, 0.6);
+      }, delay);
+    });
+  };
+
+  const handleExportPDF = async () => {
+    // Dynamic import to avoid SSR issues
+    const html2canvas = (await import('html2canvas')).default;
+    const { jsPDF } = await import('jspdf');
+
+    const element = document.getElementById('fretboard-container');
+    if (!element) return;
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2, // Higher resolution
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
+
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save(`CAGED_Session_${NOTE_NAMES[state.root]}_${state.quality}_${state.shape}.pdf`);
+    } catch (err) {
+      console.error('PDF Export failed:', err);
+    }
+  };
 
   return (
     <main className="retro-desktop font-sans select-none flex flex-col items-center justify-center p-4">
@@ -243,7 +325,14 @@ export default function Home() {
                   {(['Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'] as ChordQuality[]).map(q => (
                     <button
                       key={q}
-                      onClick={() => setState(prev => ({ ...prev, quality: q, patternMode: 'box' }))}
+                      onClick={() => {
+                        const nextState = { ...state, quality: q, patternMode: 'box' as const };
+                        setState(nextState);
+
+                        // Audio Preview
+                        const notes = calculateFretboardState(nextState);
+                        playChordNotes(notes);
+                      }}
                       className={getBtnClass(state.quality === q)}
                     >
                       {q}
@@ -304,7 +393,7 @@ export default function Home() {
 
         {/* Window 3: Fretboard Visualizer (Main Bottom) */}
         <RetroWindow title="Fretboard_Visualizer - [24 Fret]" className="flex-1 flex flex-col shadow-xl bg-white min-h-0 w-full">
-          <div className="flex-1 overflow-auto p-2 md:p-4 flex flex-col items-center gap-4 relative bg-dot-pattern h-full">
+          <div className="flex-1 overflow-auto p-2 md:p-4 flex flex-col gap-4 relative bg-dot-pattern h-full">
 
             {/* Info Bar */}
             <div className="w-full flex justify-between items-center text-xs font-mono mb-2">
@@ -318,66 +407,55 @@ export default function Home() {
 
             {/* Fretboard Frame */}
             <div className="w-full max-w-[98%] overflow-hidden border-4 border-[var(--border-dark)] bg-white shadow-[4px_4px_0px_rgba(0,0,0,0.1)] relative shrink-0">
-              {/* Fretboard Header */}
-              <div className="h-6 bg-[var(--border-light)] border-b border-[var(--border-dark)] flex items-center px-2 text-[10px] font-mono text-[var(--text-secondary)] select-none">
-                Interactive Fretboard Visualization
-              </div>
-              <div className="p-2 md:p-4 overflow-x-auto flex justify-start md:justify-center bg-slate-50">
-                {/* Enforce min-width so SVG doesn't crush */}
-                <div className="min-w-fit">
-                  <Fretboard
-                    notes={activeNotes}
-                    onNoteClick={handleNoteClick}
-                    onNoteDoubleClick={handleNoteDoubleClick}
-                    onNoteHover={handleNoteHover}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Shape Icons Bar (Bottom) */}
-            <div className="w-full max-w-[98%] flex flex-col gap-2 mt-auto pb-4">
-              <label className="text-[10px] uppercase font-bold text-[var(--text-secondary)] text-center">Active C.A.G.E.D Shape</label>
-              <div className="flex justify-center items-center gap-2 md:gap-4 scale-90 md:scale-100 origin-bottom">
-
-                {/* Previous Shape */}
+              <div className="h-6 bg-[var(--border-light)] border-b border-[var(--border-dark)] flex items-center justify-between px-2 text-[10px] font-mono text-[var(--text-secondary)] select-none">
+                <span>Interactive Fretboard Visualization</span>
                 <button
-                  onClick={() => {
-                    const shapes = ['C', 'A', 'G', 'E', 'D'] as ShapeName[];
-                    const currentIndex = shapes.indexOf(state.shape);
-                    const prevIndex = (currentIndex - 1 + shapes.length) % shapes.length;
-                    setState(prev => ({ ...prev, shape: shapes[prevIndex] }));
-                  }}
-                  className="retro-btn w-10 h-10 flex items-center justify-center font-bold text-xl bg-white active:translate-y-[2px]"
+                  onClick={handleExportPDF}
+                  className="hover:bg-blue-100 px-2 border-l border-[var(--border-dark)] h-full flex items-center gap-1 active:bg-blue-200"
+                  title="Download as PDF"
                 >
-                  &lt;
+                  <img src="/icons/directory_open-4.png" className="w-3 h-3" />
+                  EXPORT PDF
                 </button>
+              </div>
 
-                <div className="flex gap-1 md:gap-2">
-                  {(['C', 'A', 'G', 'E', 'D'] as ShapeName[]).map(s => (
-                    <button
-                      key={s}
-                      onClick={() => setState(prev => ({ ...prev, shape: s }))}
-                      className={getShapeBtnClass(state.shape === s)}
-                    >
-                      {s}
-                    </button>
-                  ))}
+              <div className="flex flex-row">
+                <div className="p-2 md:p-4 overflow-x-auto flex justify-start md:justify-center bg-slate-50 flex-1">
+                  {/* Enforce min-width so SVG doesn't crush */}
+                  <div className="min-w-fit">
+                    <Fretboard
+                      notes={activeNotes}
+                      onNoteClick={handleNoteClick}
+                      onNoteDoubleClick={handleNoteDoubleClick}
+                      onNoteHover={handleNoteHover}
+                    />
+                  </div>
                 </div>
 
-                {/* Next Shape */}
-                <button
-                  onClick={() => {
-                    const shapes = ['C', 'A', 'G', 'E', 'D'] as ShapeName[];
-                    const currentIndex = shapes.indexOf(state.shape);
-                    const nextIndex = (currentIndex + 1) % shapes.length;
-                    setState(prev => ({ ...prev, shape: shapes[nextIndex] }));
-                  }}
-                  className="retro-btn w-10 h-10 flex items-center justify-center font-bold text-xl bg-white active:translate-y-[2px]"
-                >
-                  &gt;
-                </button>
+                {/* 5. C.A.G.E.D Selector (Right Side) */}
+                <div className="flex flex-col gap-4 items-center justify-center p-4 border-l-2 border-[var(--border-light)] bg-slate-100 min-w-[200px]">
+                  <h3 className="text-xl font-bold font-silkscreen text-[var(--text-secondary)]">ACTIVE SHAPE</h3>
 
+                  <div className="flex flex-row gap-4">
+                    {(['C', 'A', 'G', 'E', 'D'] as ShapeName[]).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setState(prev => ({ ...prev, shape: s }))}
+                        className={`
+                            w-32 h-32 flex items-center justify-center 
+                            font-[family-name:var(--font-silkscreen)] text-8xl pb-4
+                            border-4 shadow-[4px_4px_0_rgba(0,0,0,0.2)] transition-all
+                            ${state.shape === s
+                            ? 'bg-[var(--background)] text-[var(--foreground)] border-[var(--foreground)] scale-105 shadow-[6px_6px_0_rgba(0,0,0,0.3)]'
+                            : 'bg-[#e2e8f0] text-[#94a3b8] border-[#cbd5e1] hover:scale-105 hover:bg-white hover:text-black hover:border-black'
+                          }
+                          `}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

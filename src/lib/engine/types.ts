@@ -24,4 +24,5 @@ export interface AppState {
     playbackSpeed: number;
     isPlaying: boolean;
     customNotes: Array<{ stringIdx: number; fret: number }>;
+    selectedNote: { stringIdx: number; fret: number } | null;
 }

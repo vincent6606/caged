@@ -70,13 +70,46 @@ export function calculateFretboardState(state: AppState): FretboardNote[] {
     if (!def || !formula) return [];
 
     // Calculate where the "Root" fret is for this shape
+    // Calculate where the "Root" fret is for this shape
     const stringOpenPitch = TUNING[def.anchorString];
+
+    // Base Root Fret on the anchor string (lowest positive fret)
     const baseRootFret = (root - stringOpenPitch % 12 + 12) % 12;
 
-    // Adjust Logic to find the "Center" of the fretboard (around fret 5-8 is nice, but we start low)
-    // For now, simple logic: lowest valid position
     let rootFret = baseRootFret;
-    if (rootFret - def.offsetLow < 0) rootFret += 12;
+
+    // Smart Octave Selection
+    // If we have a clicked note, we want the shape that *contains* that note.
+    if (state.selectedNote) {
+        const { stringIdx, fret } = state.selectedNote;
+
+        // Candidates: Low, Mid, High octaves
+        // A shape covers roughly [root - offsetLow, root + offsetHigh]
+        // We want to find a candidate Root Fret R such that the clicked note falls in range.
+        // NOTE: This is complex because "Horizontal" shapes might overlap.
+        // Let's try candidates: base, base + 12, base + 24
+
+        const candidates = [baseRootFret, baseRootFret + 12, baseRootFret + 24].filter(c => c <= 24); // Cap at 24? Actually root can be anywhere if strings allow.
+
+        const bestCandidate = candidates.find(candidateRoot => {
+            const minFret = candidateRoot - def.offsetLow;
+            const maxFret = candidateRoot + def.offsetHigh;
+            // Does the clicked note fall roughly in this fret range?
+            // Allow some wiggle room or strict logic?
+            return fret >= minFret && fret <= maxFret;
+        });
+
+        if (bestCandidate !== undefined) {
+            rootFret = bestCandidate;
+        } else {
+            // Fallback: If clicked note is far, default to standard logic (lowest valid)
+            if (rootFret - def.offsetLow < 0) rootFret += 12;
+        }
+
+    } else {
+        // Standard Logic: lowest valid position
+        if (rootFret - def.offsetLow < 0) rootFret += 12;
+    }
 
     const shapeMin = rootFret - def.offsetLow;
     const shapeMax = rootFret + def.offsetHigh;
