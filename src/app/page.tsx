@@ -106,16 +106,29 @@ export default function Home() {
     const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
 
+    // FIX PREVENT EDIT IN TAB MODE
+    if (state.patternMode === 'tab') return;
+
     setState(prev => {
       // 1. Determine the base notes we are editing
       let currentNotes = prev.customNotes || [];
       let nextMode = prev.patternMode;
+      let prevModeToStore = prev.previousPatternMode;
 
-      // If we are NOT in edit mode, snapshot the current view into customNotes asking "Keep current shape box"
+      // If we are NOT in edit mode, snapshot the current view into customNotes
       if (prev.patternMode !== 'edit') {
         const visibleNotes = calculateFretboardState(prev);
         currentNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
+
+        // FIX: If note is already selected/visible in a non-edit mode, do NOT remove it.
+        // Just keep the current state (audio already played).
+        const alreadyExists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+        if (alreadyExists) {
+          return prev;
+        }
+
         nextMode = 'edit';
+        prevModeToStore = prev.patternMode; // Store ONLY when entering edit mode
       }
 
       // 2. Toggle the specific note clicked
@@ -131,7 +144,8 @@ export default function Home() {
       return {
         ...prev,
         patternMode: nextMode as any, // Cast to ensure TS is happy if needed, though AppState should allow 'edit'
-        customNotes: nextNotes
+        customNotes: nextNotes,
+        previousPatternMode: prevModeToStore // Store previous mode for recovery
       };
     });
   };
@@ -148,20 +162,39 @@ export default function Home() {
     // Auto-Shape Logic only applies to Standard Tuning
     if (state.tuningName === 'Standard') {
       const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
-      // Use current state shape as base
-      if (validShapes && !validShapes.includes(state.shape)) {
+      const sameRoot = chromaticIdx === state.root;
+
+      // Resolve effective mode
+      const originMode = state.patternMode === 'edit' ? state.previousPatternMode : state.patternMode;
+
+      // CYCLE LOGIC: If same root AND in box/waterfall mode, cycle through valid shapes
+      if (sameRoot && validShapes && (originMode === 'box' || originMode === 'waterfall')) {
+        const currentIndex = validShapes.indexOf(state.shape);
+        // If current shape is valid, pick next; otherwise start at 0
+        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % validShapes.length;
+        newShape = validShapes[nextIndex];
+      }
+      // DEFAULT LOGIC: If new root or current shape invalid, pick first valid
+      else if (validShapes && !validShapes.includes(state.shape)) {
         newShape = validShapes[0];
       }
     }
 
-    setState(prev => ({
-      ...prev,
-      patternMode: 'box', // Reset to standard Box mode
-      root: chromaticIdx,
-      shape: newShape,
-      selectedNote: { stringIdx, fret },
-      customNotes: [] // Clear custom notes for a fresh start
-    }));
+    setState(prev => {
+      // Determine next mode using fresh 'prev' state
+      // If we are in 'edit' (triggered by single click), check if we came from 'tab'
+      const originMode = prev.patternMode === 'edit' ? prev.previousPatternMode : prev.patternMode;
+      const nextMode = originMode === 'tab' ? 'tab' : 'box';
+
+      return {
+        ...prev,
+        patternMode: nextMode,
+        root: chromaticIdx,
+        shape: newShape,
+        selectedNote: { stringIdx, fret },
+        customNotes: nextMode === 'tab' ? prev.customNotes : [] // Only clear custom notes if leaving Edit mode (effectively resetting to box)
+      };
+    });
   };
 
   // Hover Handler for Audio Preview
@@ -244,13 +277,20 @@ export default function Home() {
   };
 
   const handleExportPDF = async () => {
-    const html2canvas = (await import('html2canvas')).default;
-    const { jsPDF } = await import('jspdf');
-
-    const element = document.getElementById('fretboard-container');
-    if (!element) return;
-
     try {
+      const html2canvas = (await import('html2canvas')).default;
+
+      const jsPDFModule = await import('jspdf');
+
+      // Robust import: try default, then named, to handle various ESM/CJS interop scenarios
+      const jsPDF = (jsPDFModule as any).default || (jsPDFModule as any).jsPDF || jsPDFModule;
+
+      const element = document.getElementById('fretboard-container');
+      if (!element) {
+        console.error("PDF Export: Element 'fretboard-container' not found");
+        return;
+      }
+
       const canvas = await html2canvas(element, {
         scale: 2,
         backgroundColor: '#ffffff'
@@ -262,9 +302,12 @@ export default function Home() {
         unit: 'px',
         format: [canvas.width, canvas.height]
       });
-
       pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`CAGED_Session_${NOTE_NAMES[state.root]}_${state.quality}_${state.shape}.pdf`);
+      const safeRoot = NOTE_NAMES[state.root].replace('#', 's');
+      const filename = `CAGED_Session_${safeRoot}_${state.quality}_${state.shape}.pdf`;
+
+      pdf.save(filename);
+
     } catch (err) {
       console.error('PDF Export failed:', err);
     }
@@ -407,8 +450,15 @@ export default function Home() {
                     className={getBtnClass(state.patternMode === 'edit')}
                     onClick={() => {
                       if (state.patternMode !== 'edit') {
-                        const currentNotes = calculateFretboardState(state);
-                        setState(prev => ({ ...prev, patternMode: 'edit', currentNotes }));
+                        const visibleNotes = calculateFretboardState(state);
+                        const existingNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
+
+                        setState(prev => ({
+                          ...prev,
+                          patternMode: 'edit',
+                          customNotes: existingNotes,
+                          previousPatternMode: prev.patternMode
+                        }));
                       } else {
                         setState(prev => ({ ...prev, patternMode: 'edit' }));
                       }
@@ -448,8 +498,8 @@ export default function Home() {
           </InfoPanel>
         </RetroWindow>
 
-        {/* Optional Window: Tab Player (Only visible in Tab Mode) */}
-        {state.patternMode === 'tab' && fileData && (
+        {/* Optional Window: Tab Player (Only visible in Tab Mode or Edit Mode from Tab) */}
+        {(state.patternMode === 'tab' || (state.patternMode === 'edit' && state.previousPatternMode === 'tab')) && fileData && (
           <RetroWindow title="Tab_Viewer.exe" className="h-[250px] shadow-xl bg-white w-full shrink-0">
             <AlphaTabPlayer
               fileData={fileData}

@@ -254,7 +254,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                                 onChange={(e) => setStartBar(e.target.value)}
                                 onBlur={(e) => validateAndSetRange(true, e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && validateAndSetRange(true, (e.target as any).value)}
-                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center"
+                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center select-text"
                             />
                             <span className="text-sm font-bold">-</span>
                             <input
@@ -263,7 +263,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                                 onChange={(e) => setEndBar(e.target.value)}
                                 onBlur={(e) => validateAndSetRange(false, e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && validateAndSetRange(false, (e.target as any).value)}
-                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center"
+                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center select-text"
                             />
                             <button
                                 onClick={() => validateAndSetRange(true, startBar)}

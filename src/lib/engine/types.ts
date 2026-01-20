@@ -29,4 +29,5 @@ export interface AppState {
     customNotes: Array<{ stringIdx: number; fret: number }>;
     selectedNote: { stringIdx: number; fret: number } | null;
     activeTabNotes: Array<{ stringIdx: number; fret: number }>;
+    previousPatternMode?: PatternMode;
 }
