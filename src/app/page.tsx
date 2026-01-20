@@ -5,9 +5,9 @@ import { InfoPanel } from '@/components/InfoPanel';
 import { RetroWindow } from '@/components/RetroWindow';
 import { Fretboard } from '@/components/Fretboard';
 import { YouTubePlayer, YouTubePlayerRef } from '@/components/YouTubePlayer';
-import { AppState, ShapeName, ChordQuality } from '@/lib/engine/types';
+import { AppState, ShapeName, ChordQuality, TuningName } from '@/lib/engine/types';
 import { calculateFretboardState } from '@/lib/engine/caged';
-import { NOTE_NAMES, STRING_TO_SHAPE_MAP } from '@/lib/engine/constants';
+import { NOTE_NAMES, STRING_TO_SHAPE_MAP, TUNINGS } from '@/lib/engine/constants';
 import { audio, getNoteFrequency } from '@/lib/audio/context';
 
 const BACKING_TRACKS = [
@@ -16,95 +16,159 @@ const BACKING_TRACKS = [
   { id: 'G9XogUbFp0Q', title: 'R&B Chords (C) - 90 BPM', root: 0, quality: 'Maj7' }, // C Maj7
 ];
 
+import { DesktopIcon } from '@/components/DesktopIcon';
+import { AlphaTabPlayer } from '@/components/AlphaTabPlayer';
+
 export default function Home() {
   const playerRef = useRef<YouTubePlayerRef>(null);
 
-  // Initialize state with customNotes for 'edit' mode
+  // Initialize state with customNotes for 'edit'  // State
   const [state, setState] = useState<AppState>({
     root: 0, // C
     quality: 'Maj7',
-    shape: 'C',
+    shape: 'C', // Default start
     patternMode: 'box',
+    tuningName: 'Standard',
+    tuning: TUNINGS['Standard'],
     playbackSpeed: 1,
     isPlaying: false,
-    customNotes: [],
-    selectedNote: null
+    customNotes: [], // For Edit Mode
+    selectedNote: null,
+    activeTabNotes: []
   });
 
   const [activeTrack, setActiveTrack] = useState(BACKING_TRACKS[2].id);
+  const [fileData, setFileData] = useState<ArrayBuffer | null>(null);
 
   const activeNotes = calculateFretboardState(state);
 
-  const handleNoteClick = (stringIdx: number, fret: number) => {
-    const freq = getNoteFrequency(stringIdx, fret);
-    audio.playTone(freq);
+  // Load samples on mount
+  useEffect(() => {
+    audio.resume();
+  }, []);
 
-    // Edit Mode Logic: Toggle Notes
-    if (state.patternMode === 'edit') {
-      setState(prev => {
-        // Ensure customNotes is array
-        const currentNotes = prev.customNotes || [];
-        const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+  // Handlers
+  const handleRootChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setState(prev => ({ ...prev, root: parseInt(e.target.value) }));
+  };
 
-        if (exists) {
-          return {
-            ...prev,
-            customNotes: currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret))
-          };
-        } else {
-          return {
-            ...prev,
-            customNotes: [...currentNotes, { stringIdx, fret }]
-          };
-        }
-      });
-      return;
-    }
+  const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setState(prev => ({ ...prev, quality: e.target.value as ChordQuality }));
+  };
 
-    // Standard Logic: Set Root
-    const TUNING = [4, 9, 14, 19, 23, 28];
-    const chromaticIdx = (TUNING[stringIdx] + fret) % 12;
+  const handleShapeChange = (shape: ShapeName) => {
+    setState(prev => ({ ...prev, shape }));
+  };
 
+  const handlePatternModeChange = (mode: string) => {
+    setState(prev => ({ ...prev, patternMode: mode as any }));
+  };
+
+  const handleTuningChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newName = e.target.value as TuningName;
     setState(prev => ({
       ...prev,
-      root: chromaticIdx,
-      selectedNote: { stringIdx, fret }
+      tuningName: newName,
+      tuning: TUNINGS[newName],
+      // Reset custom notes on tuning change to avoid confusion?
+      customNotes: []
     }));
   };
 
-  const handleNoteDoubleClick = (stringIdx: number, fret: number) => {
-    const freq = getNoteFrequency(stringIdx, fret);
+  const handleManualTuningChange = (stringIdx: number, newPitch: number) => {
+    const newTuning = [...state.tuning];
+    newTuning[stringIdx] = newPitch;
+    setState(prev => ({
+      ...prev,
+      tuning: newTuning,
+      tuningName: 'Custom' as TuningName,
+      customNotes: []
+    }));
+  };
+
+  const handleTabUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        if (evt.target?.result) {
+          setFileData(evt.target.result as ArrayBuffer);
+          setState(prev => ({ ...prev, patternMode: 'tab' }));
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  };
+
+  const handleNoteClick = (stringIdx: number, fret: number) => {
+    const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
 
-    const TUNING = [4, 9, 14, 19, 23, 28];
-    const chromaticIdx = (TUNING[stringIdx] + fret) % 12;
+    setState(prev => {
+      // 1. Determine the base notes we are editing
+      let currentNotes = prev.customNotes || [];
+      let nextMode = prev.patternMode;
 
-    const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
+      // If we are NOT in edit mode, snapshot the current view into customNotes asking "Keep current shape box"
+      if (prev.patternMode !== 'edit') {
+        const visibleNotes = calculateFretboardState(prev);
+        currentNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
+        nextMode = 'edit';
+      }
+
+      // 2. Toggle the specific note clicked
+      const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+      let nextNotes;
+
+      if (exists) {
+        nextNotes = currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret));
+      } else {
+        nextNotes = [...currentNotes, { stringIdx, fret }];
+      }
+
+      return {
+        ...prev,
+        patternMode: nextMode as any, // Cast to ensure TS is happy if needed, though AppState should allow 'edit'
+        customNotes: nextNotes
+      };
+    });
+  };
+
+  const handleNoteDoubleClick = (stringIdx: number, fret: number) => {
+    const freq = getNoteFrequency(stringIdx, fret, state.tuning);
+    audio.playTone(freq);
+
+    // Calc Root based on current Tuning
+    const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
+
     let newShape = state.shape;
 
-    if (chromaticIdx === state.root && validShapes.includes(state.shape)) {
-      if (validShapes) {
-        const currentIdx = validShapes.indexOf(state.shape);
-        newShape = validShapes[(currentIdx + 1) % validShapes.length];
+    // Auto-Shape Logic only applies to Standard Tuning
+    if (state.tuningName === 'Standard') {
+      const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
+      // Use current state shape as base
+      if (validShapes && !validShapes.includes(state.shape)) {
+        newShape = validShapes[0];
       }
-    } else {
-      if (validShapes) newShape = validShapes[0];
     }
 
     setState(prev => ({
       ...prev,
+      patternMode: 'box', // Reset to standard Box mode
       root: chromaticIdx,
       shape: newShape,
-      selectedNote: { stringIdx, fret }
+      selectedNote: { stringIdx, fret },
+      customNotes: [] // Clear custom notes for a fresh start
     }));
   };
 
   // Hover Handler for Audio Preview
   const handleNoteHover = (stringIdx: number, fret: number) => {
     // Only play if the note is currently active/visible
-    const isActive = activeNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+    const active = calculateFretboardState(state);
+    const isActive = active.some(n => n.stringIdx === stringIdx && n.fret === fret);
     if (isActive) {
-      const freq = getNoteFrequency(stringIdx, fret);
+      const freq = getNoteFrequency(stringIdx, fret, state.tuning);
       audio.playTone(freq, 0.4); // Short duration for hover
     }
   };
@@ -134,16 +198,8 @@ export default function Home() {
   const playChordNotes = (notes: ReturnType<typeof calculateFretboardState>) => {
     // 0. Helper to get Pitch Score
     const getPitchScore = (n: typeof notes[0]) => {
-      // String 0 = Low E, String 5 = High E (Wait, earlier we determined String 0 is Low E? 
-      // Let's RE-VERIFY string indices from constants.ts or previous verification.)
-      // My verification script used: String 0 = Low E implies ascending pitch with index.
-      // But let's look at `TUNING` in constants...
-      // CONSTANTS: TUNING = [4, 9, 14, 19, 23, 28] -> E, A, D, G, B, E
-      // So index 0 = Low E (pitch 4). index 5 = High E (pitch 28).
-      // So HIGHER index = HIGHER pitch (mostly).
-      // Pitch = TUNING[s] + fret.
-      const TUNING = [4, 9, 14, 19, 23, 28];
-      return TUNING[n.stringIdx] + n.fret;
+      // Use current dynamic tuning to calculate absolute pitch
+      return state.tuning[n.stringIdx] + n.fret;
     };
 
     // 1. Sort all available notes by pitch (Low -> High)
@@ -157,7 +213,6 @@ export default function Home() {
     let currentPitch = getPitchScore(rootNote);
 
     // 3. Find next intervals in strict ascending order
-    // Targets: 3rd (3/4), 5th (6/7/8), 7th (9/10/11)
     const targets = [
       [3, 4],       // Thirds
       [6, 7, 8],    // Fifths
@@ -179,7 +234,7 @@ export default function Home() {
     // 4. Play
     sequence.forEach((note, i) => {
       const delay = i * 150; // Slower arpeggio for clarity
-      const freq = getNoteFrequency(note.stringIdx, note.fret);
+      const freq = getNoteFrequency(note.stringIdx, note.fret, state.tuning);
       setTimeout(() => {
         audio.playTone(freq, 0.6);
       }, delay);
@@ -187,7 +242,6 @@ export default function Home() {
   };
 
   const handleExportPDF = async () => {
-    // Dynamic import to avoid SSR issues
     const html2canvas = (await import('html2canvas')).default;
     const { jsPDF } = await import('jspdf');
 
@@ -196,7 +250,7 @@ export default function Home() {
 
     try {
       const canvas = await html2canvas(element, {
-        scale: 2, // Higher resolution
+        scale: 2,
         backgroundColor: '#ffffff'
       });
 
@@ -214,6 +268,13 @@ export default function Home() {
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleNotesDecoded = (notes: { stringIdx: number; fret: number }[]) => {
+    console.log("Notes Decoded:", notes.length);
+    setState(prev => ({ ...prev, activeTabNotes: notes }));
+  };
+
   return (
     <main className="retro-desktop font-sans select-none flex flex-col items-center justify-center p-4">
       {/* Pixel Art Waves Background */}
@@ -225,197 +286,194 @@ export default function Home() {
         }}
       />
 
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleTabUpload}
+        className="hidden"
+        accept=".gp,.gp3,.gp4,.gp5,.gpx"
+      />
+
       {/* Desktop Icons */}
-      <div className="retro-icon" style={{ top: 20, left: 20 }}>
-        <img src="/icons/computer_explorer-4.png" alt="My Computer" className="w-8 h-8 pixelated" />
-        <span className="bg-[#000080] px-1">My Computer</span>
-      </div>
+      <DesktopIcon
+        label="My Computer"
+        iconSrc="/icons/computer_explorer-4.png"
+        onClick={() => { }}
+        top={20} left={20}
+      />
 
-      <div className="retro-icon" style={{ top: 100, left: 20 }}>
-        <img src="/icons/recycle_bin_full-2.png" alt="Recycle Bin" className="w-8 h-8 pixelated" />
-        <span className="bg-transparent px-1 border border-dotted border-white/0 hover:border-white/50">Recycle Bin</span>
-      </div>
+      <DesktopIcon
+        label="Tab_Importer.exe"
+        iconSrc="/icons/upload_gp.png"
+        onClick={() => {
+          fileInputRef.current?.click();
+        }}
+        top={100} left={20}
+      />
 
-      <div className="retro-icon" style={{ top: 180, left: 20 }}>
-        <img src="/icons/directory_closed-4.png" alt="My Documents" className="w-8 h-8 pixelated" />
-        <span className="bg-transparent px-1 border border-dotted border-white/0 hover:border-white/50">My Documents</span>
-      </div>
+      <DesktopIcon
+        label="Export_PDF.exe"
+        iconSrc="/icons/printer_diskette-2.png"
+        onClick={handleExportPDF}
+        top={180} left={20}
+      />
 
-      <div className="retro-icon" style={{ top: 260, left: 20 }}>
-        <img src="/icons/msie2-2.png" alt="Internet" className="w-8 h-8 pixelated" />
-        <span className="bg-transparent px-1 border border-dotted border-white/0 hover:border-white/50">Internet</span>
-      </div>
-
-      {/* Main Layout Grid - Single Column Stack now */}
+      {/* Main Layout Grid */}
       <div className="w-full max-w-[1400px] h-full max-h-[900px] flex flex-col gap-4 z-10">
 
-        {/* Window 1: Jam Station (Sidebar) - REMOVED FOR NOW per user request */}
-        {/* 
-        <RetroWindow title="Harmony Architect Station" className="h-full flex flex-col md:row-span-2 shadow-xl bg-white">
-          <div className="w-full bg-[#f1f5f9] p-4 flex flex-col gap-4 h-full overflow-y-auto">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] border-b border-[var(--border-light)] pb-1 mb-2">
-              Start Menu / Jam Station
-            </div>
-
-            <YouTubePlayer
-              ref={playerRef}
-              videoId={activeTrack}
-              className="shadow-sm w-full aspect-video"
-            />
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] uppercase font-bold">Backing Track</label>
-              <select
-                value={activeTrack}
-                onChange={(e) => handleTrackChange(e.target.value)}
-                className="retro-btn bg-white w-full border-2 border-[var(--border-dark)] text-xs text-left"
-              >
-                {BACKING_TRACKS.map(t => (
-                  <option key={t.id} value={t.id}>{t.title}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <button onClick={() => playerRef.current?.setPlaybackRate(0.5)} className="retro-btn bg-white">0.5x</button>
-              <button onClick={() => playerRef.current?.setPlaybackRate(0.75)} className="retro-btn bg-white">0.75x</button>
-              <button onClick={() => playerRef.current?.setPlaybackRate(1)} className="retro-btn bg-white col-span-2">Normal Speed</button>
-            </div>
-
-            <div className="mt-auto border-t border-[var(--border-light)] pt-4 hidden md:block">
-              <div className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
-                <strong>Instructions:</strong><br />
-                1. Select a track.<br />
-                2. Click 'Play' above.<br />
-                3. Follow the lighted notes.<br />
-                4. Double-click a note to navigate.
-              </div>
-            </div>
-          </div>
-        </RetroWindow> 
-        */}
-
         {/* Window 2: Active Quest (Top Info Panel) */}
-        <RetroWindow title="Active_Session.exe" className="md:h-auto shadow-xl bg-white w-full">
-          <InfoPanel
-            root={state.root}
-            quality={state.quality}
-            bpm={90}
-            description="Connecting C.A.G.E.D positions across the fretboard."
-          >
-            {/* INJECTED CONTROLS */}
-            <div className="flex flex-wrap md:flex-nowrap gap-4 items-center">
+        {state.patternMode === 'tab' && fileData ? (
+          <RetroWindow title="Tab_Viewer.exe" className="h-[400px] shadow-xl bg-white w-full shrink-0">
+            <AlphaTabPlayer
+              fileData={fileData}
+              onNotesDecoded={handleNotesDecoded}
+              onPlayerReady={(api) => { console.log('Player ready', api); }}
+              onKeyDetected={(root, quality) => {
+                setState(prev => ({ ...prev, root, quality: quality as any }));
+              }}
+            />
+          </RetroWindow>
+        ) : (
+          <RetroWindow title="Active_Session.exe" className="md:h-auto shadow-xl bg-white w-full">
+            <InfoPanel
+              root={state.root}
+              quality={state.quality}
+              bpm={90}
+              description="Connecting C.A.G.E.D positions across the fretboard."
+            >
+              {/* INJECTED CONTROLS */}
+              <div className="flex flex-wrap md:flex-nowrap gap-4 items-center">
 
-              {/* Root Selector */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Root</label>
-                <select
-                  value={state.root}
-                  onChange={(e) => setState(prev => ({ ...prev, root: parseInt(e.target.value) }))}
-                  className="retro-btn bg-white w-16 border-2 border-[var(--border-dark)] py-1 text-xs"
-                >
-                  {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
-                </select>
-              </div>
+                {/* Root Selector */}
+                <div className="flex flex-col gap-1 items-center">
+                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Root</label>
+                  <select
+                    value={state.root}
+                    onChange={(e) => setState(prev => ({ ...prev, root: parseInt(e.target.value) }))}
+                    className="retro-btn bg-white w-16 border-2 border-[var(--border-dark)] py-1 text-xs"
+                  >
+                    {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                  </select>
+                </div>
 
-              {/* Quality Buttons */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Quality</label>
-                <div className="flex gap-1">
-                  {(['Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'] as ChordQuality[]).map(q => (
+                {/* Tuning Selector */}
+                <div className="flex flex-col gap-1 items-center">
+                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Tuning</label>
+                  <select
+                    value={state.tuningName === 'Custom' ? '' : state.tuningName} // Show Custom as blank or 'Custom' if added
+                    onChange={handleTuningChange}
+                    className="retro-btn bg-white w-24 border-2 border-[var(--border-dark)] py-1 text-xs"
+                  >
+                    {Object.keys(TUNINGS).map(t => <option key={t} value={t}>{t}</option>)}
+                    {state.tuningName === 'Custom' && <option value="Custom">Custom</option>}
+                  </select>
+                </div>
+
+                {/* Quality Buttons */}
+                <div className="flex flex-col gap-1 items-center">
+                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Quality</label>
+                  <div className="flex gap-1">
+                    {(['Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'] as ChordQuality[]).map(q => (
+                      <button
+                        key={q}
+                        onClick={() => {
+                          const nextState = { ...state, quality: q, patternMode: 'box' as const };
+                          setState(nextState);
+
+                          // Audio Preview
+                          const notes = calculateFretboardState(nextState);
+                          playChordNotes(notes);
+                        }}
+                        className={getBtnClass(state.quality === q)}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-8 w-[2px] bg-[var(--border-light)] mx-2 hidden md:block"></div>
+
+                {/* View/Mode Buttons */}
+                <div className="flex flex-col gap-1 items-center">
+                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View Mode</label>
+                  <div className="flex gap-1 items-center">
                     <button
-                      key={q}
-                      onClick={() => {
-                        const nextState = { ...state, quality: q, patternMode: 'box' as const };
-                        setState(nextState);
-
-                        // Audio Preview
-                        const notes = calculateFretboardState(nextState);
-                        playChordNotes(notes);
-                      }}
-                      className={getBtnClass(state.quality === q)}
+                      className={`${getBtnClass(state.patternMode === 'box')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
+                      onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'box' }))}
+                      disabled={state.tuningName !== 'Standard'}
+                      title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
                     >
-                      {q}
+                      Box
                     </button>
-                  ))}
+                    <button
+                      className={`${getBtnClass(state.patternMode === 'waterfall')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
+                      onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'waterfall' }))}
+                      disabled={state.tuningName !== 'Standard'}
+                      title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
+                    >
+                      Waterfall
+                    </button>
+                    <button
+                      className={getBtnClass(state.patternMode === 'edit')}
+                      onClick={() => {
+                        if (state.patternMode !== 'edit') {
+                          const currentNotes = calculateFretboardState(state);
+                          setState(prev => ({ ...prev, patternMode: 'edit', currentNotes }));
+                        } else {
+                          setState(prev => ({ ...prev, patternMode: 'edit' }));
+                        }
+                      }}
+                    >
+                      Edit
+                    </button>
+
+                    <button
+                      className={getBtnClass(state.patternMode === 'tab')}
+                      onClick={() => {
+                        if (!fileData) {
+                          fileInputRef.current?.click();
+                        } else {
+                          setState(prev => ({ ...prev, patternMode: 'tab' }));
+                        }
+                      }}
+                    >
+                      Tab
+                    </button>
+
+                    {/* Reset Button */}
+                    <button
+                      onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
+                      className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.patternMode === 'edit'
+                        ? 'bg-red-100 hover:bg-red-200 opacity-100'
+                        : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                        }`}
+                      disabled={state.patternMode !== 'edit'}
+                      title="Clear all notes (Edit Mode only)"
+                    >
+                      Reset
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div className="h-8 w-[2px] bg-[var(--border-light)] mx-2 hidden md:block"></div>
-
-              {/* View/Mode Buttons */}
-              <div className="flex flex-col gap-1 items-center">
-                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View Mode</label>
-                <div className="flex gap-1 items-center">
-                  <button
-                    className={getBtnClass(state.patternMode === 'box')}
-                    onClick={() => setState(prev => ({ ...prev, patternMode: 'box' }))}
-                  >
-                    Box
-                  </button>
-                  <button
-                    className={getBtnClass(state.patternMode === 'waterfall')}
-                    onClick={() => setState(prev => ({ ...prev, patternMode: 'waterfall' }))}
-                  >
-                    Waterfall
-                  </button>
-                  <button
-                    className={getBtnClass(state.patternMode === 'edit')}
-                    onClick={() => {
-                      if (state.patternMode !== 'edit') {
-                        const currentNotes = calculateFretboardState(state);
-                        setState(prev => ({ ...prev, patternMode: 'edit', customNotes: currentNotes }));
-                      } else {
-                        setState(prev => ({ ...prev, patternMode: 'edit' }));
-                      }
-                    }}
-                  >
-                    Edit
-                  </button>
-
-                  {/* Reset Button */}
-                  <button
-                    onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
-                    className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.patternMode === 'edit'
-                      ? 'bg-red-100 hover:bg-red-200 opacity-100'
-                      : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
-                      }`}
-                    disabled={state.patternMode !== 'edit'}
-                    title="Clear all notes (Edit Mode only)"
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-            </div>
-          </InfoPanel>
-        </RetroWindow>
+            </InfoPanel>
+          </RetroWindow>
+        )}
 
         {/* Window 3: Fretboard Visualizer (Main Bottom) */}
         <RetroWindow title="Fretboard_Visualizer - [24 Fret]" className="flex-1 flex flex-col shadow-xl bg-white min-h-0 w-full">
           <div className="flex-1 overflow-auto p-2 md:p-4 flex flex-col gap-4 relative bg-dot-pattern h-full">
 
-            {/* Info Bar */}
-            <div className="w-full flex justify-between items-center text-xs font-mono mb-2">
-              <div className="flex items-center gap-2 px-3 py-1 bg-white border-2 border-[var(--border-dark)]">
-                <div className={`w-3 h-3 rounded-full ${state.isPlaying ? 'bg-green-500 animate-pulse' : 'bg-red-400'}`}></div>
-                <span className="font-bold hidden md:inline">STATUS: {state.isPlaying ? 'JAMMING' : 'READY'}</span>
-                <span className="font-bold md:hidden">{state.isPlaying ? 'ON' : 'OFF'}</span>
-              </div>
-              <span className="text-[var(--text-secondary)] font-bold">{NOTE_NAMES[state.root]} {state.quality}</span>
-            </div>
-
             {/* Fretboard Frame */}
             <div className="w-full max-w-[98%] overflow-hidden border-4 border-[var(--border-dark)] bg-white shadow-[4px_4px_0px_rgba(0,0,0,0.1)] relative shrink-0">
-              <div className="h-6 bg-[var(--border-light)] border-b border-[var(--border-dark)] flex items-center justify-between px-2 text-[10px] font-mono text-[var(--text-secondary)] select-none">
-                <span>Interactive Fretboard Visualization</span>
+              <div className="h-6 bg-[var(--border-light)] border-b border-[var(--border-dark)] flex items-center justify-end px-2 text-[10px] font-mono text-[var(--text-secondary)] select-none">
                 <button
                   onClick={handleExportPDF}
                   className="hover:bg-blue-100 px-2 border-l border-[var(--border-dark)] h-full flex items-center gap-1 active:bg-blue-200"
                   title="Download as PDF"
                 >
-                  <img src="/icons/directory_open-4.png" className="w-3 h-3" />
-                  EXPORT PDF
+                  <img src="/icons/printer_diskette-2.png" className="w-4 h-4" />
+                  <span className="font-bold">EXPORT PDF</span>
                 </button>
               </div>
 
@@ -425,6 +483,8 @@ export default function Home() {
                   <div className="min-w-fit">
                     <Fretboard
                       notes={activeNotes}
+                      tuning={state.tuning}
+                      onTuningChange={handleManualTuningChange}
                       onNoteClick={handleNoteClick}
                       onNoteDoubleClick={handleNoteDoubleClick}
                       onNoteHover={handleNoteHover}
@@ -432,29 +492,54 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 5. C.A.G.E.D Selector (Right Side) */}
-                <div className="flex flex-col gap-4 items-center justify-center p-4 border-l-2 border-[var(--border-light)] bg-slate-100 min-w-[200px]">
-                  <h3 className="text-xl font-bold font-silkscreen text-[var(--text-secondary)]">ACTIVE SHAPE</h3>
-
-                  <div className="flex flex-row gap-4">
-                    {(['C', 'A', 'G', 'E', 'D'] as ShapeName[]).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => setState(prev => ({ ...prev, shape: s }))}
-                        className={`
-                            w-32 h-32 flex items-center justify-center 
-                            font-[family-name:var(--font-silkscreen)] text-8xl pb-4
-                            border-4 shadow-[4px_4px_0_rgba(0,0,0,0.2)] transition-all
-                            ${state.shape === s
-                            ? 'bg-[var(--background)] text-[var(--foreground)] border-[var(--foreground)] scale-105 shadow-[6px_6px_0_rgba(0,0,0,0.3)]'
-                            : 'bg-[#e2e8f0] text-[#94a3b8] border-[#cbd5e1] hover:scale-105 hover:bg-white hover:text-black hover:border-black'
-                          }
-                          `}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                {/* 5. Sidebar (Right Side) */}
+                <div className="flex flex-col gap-4 items-center justify-center p-4 border-l-2 border-[var(--border-light)] bg-slate-100 min-w-[240px]">
+                  {state.patternMode === 'tab' ? (
+                    <>
+                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">ROOT NOTE</h3>
+                      <div className="w-40 h-40 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-9xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
+                        {NOTE_NAMES[state.root]}
+                      </div>
+                    </>
+                  ) : state.tuningName !== 'Standard' ? (
+                    <>
+                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">TUNING</h3>
+                      <div className="w-40 h-16 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-xl text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)] uppercase">
+                        {state.tuningName}
+                      </div>
+                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)] mt-4">ROOT</h3>
+                      <div className="w-40 h-40 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-9xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
+                        {NOTE_NAMES[state.root]}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">ACTIVE SHAPE</h3>
+                      <div className="flex flex-row gap-4">
+                        {/* 4x Grid of Buttons? Or Just Row? Original was Row */}
+                        {/* We use grid to make them large enough */}
+                        <div className="flex flex-wrap gap-2 w-40 justify-center">
+                          {(['C', 'A', 'G', 'E', 'D'] as const).map(shape => (
+                            <button
+                              key={shape}
+                              onClick={() => handleShapeChange(shape)}
+                              className={`
+                                w-12 h-12 flex items-center justify-center 
+                                font-[family-name:var(--font-silkscreen)] text-2xl font-bold 
+                                border-2 border-black shadow-[2px_2px_0_black]
+                                transition-all active:translate-y-1 active:shadow-none
+                                ${state.shape === shape
+                                  ? 'bg-[var(--accent-red)] text-white scale-110 z-10'
+                                  : 'bg-white text-black hover:bg-gray-100'}
+                              `}
+                            >
+                              {shape}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

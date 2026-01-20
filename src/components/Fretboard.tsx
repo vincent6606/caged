@@ -1,21 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FretboardNote } from '@/lib/engine/types';
+import { NOTE_NAMES } from '@/lib/engine/constants';
 
 interface FretboardProps {
     notes: FretboardNote[];
+    tuning?: number[];
+    onTuningChange?: (stringIdx: number, newPitch: number) => void;
     onNoteClick?: (stringIdx: number, fret: number) => void;
     onNoteDoubleClick?: (stringIdx: number, fret: number) => void;
     onNoteHover?: (stringIdx: number, fret: number) => void;
 }
 
-export function Fretboard({ notes, onNoteClick, onNoteDoubleClick, onNoteHover }: FretboardProps) {
+export function Fretboard({ notes, tuning = [4, 9, 14, 19, 23, 28], onTuningChange, onNoteClick, onNoteDoubleClick, onNoteHover }: FretboardProps) {
     // Constants
     const S_H = 35;
     const F_W = 40; // Aggressively reduced to 40 to fit 24 frets
     const PAD_Y = 30;
 
     // Layout: [Labels] [Open Notes] [NUT] [Fret 1] ...
-    const LBL_W = 20; // Ultra compact Labels
+    const LBL_W = 40; // Increased for Input
     const OPEN_W = 35; // Compact Open Area
     const NUT_W = 6;   // Thinner Nut
 
@@ -27,27 +30,64 @@ export function Fretboard({ notes, onNoteClick, onNoteDoubleClick, onNoteHover }
     const WIDTH = BOARD_START_X + (END_FRET * F_W) + 20;
     const HEIGHT = PAD_Y * 2 + 5 * S_H + 30;
 
-    // Labels for Tuning
-    // Reference: Top=High E, Bottom=Low E.
-    // Our Logic: s=0 (Low E)..s=5 (High E).
-    // So Visual Row 0 (Top) corresponds to Logic String 5.
-    // Visual Row 5 (Bottom) corresponds to Logic String 0.
-    const STRING_LABELS = ['E', 'B', 'G', 'D', 'A', 'E'];
+    // Helper to handle input change
+    const handleInputChange = (stringIdx: number, val: string) => {
+        const cleanVal = val.toUpperCase().trim();
+        const noteIdx = NOTE_NAMES.indexOf(cleanVal as any);
+
+        if (noteIdx !== -1 && onTuningChange) {
+            // Logic to keep the octave roughly same? 
+            // Current pitch: tuning[stringIdx]. 
+            // We want new pitch P such that P % 12 == noteIdx, and P is close to current.
+            // Simplified: Just keep current octave, unless wrapping?
+            // Actually, let's just find the closest P.
+            const currentPitch = tuning[stringIdx];
+            const currentNoteIdx = currentPitch % 12;
+
+            let diff = noteIdx - currentNoteIdx;
+            // Minimal movement logic (e.g. going G -> A is +2, G -> F is -2)
+            if (diff > 6) diff -= 12;
+            if (diff < -6) diff += 12;
+
+            onTuningChange(stringIdx, currentPitch + diff);
+        }
+    };
 
     return (
         <div id="fretboard-container" className="overflow-x-auto pb-4 scrollbar-thin bg-white">
             <svg width={WIDTH} height={HEIGHT} className="select-none min-w-[1000px]">
 
-                {/* 0. String Labels (Far Left) */}
-                {STRING_LABELS.map((lbl, i) => {
-                    // i=0 is Top.
+                {/* 0. Tuning Inputs (Far Left) */}
+                {Array.from({ length: 6 }).map((_, s) => {
+                    // s=0 is Logic Low E (Bottom of visual). But SVG y goes Top->Down.
+                    // Visual Row 0 = Top = String 5.
+                    // Visual Row 5 = Bottom = String 0.
+                    // Loop is s=0..5. Let's map visual row i to stringIdx.
+                    // stringIdx = 5 - i.
+                    const i = s;
+                    const stringIdx = 5 - i; // 5, 4, 3, 2, 1, 0
+
                     const y = PAD_Y + i * S_H;
+                    const pitch = tuning[stringIdx];
+                    const noteName = NOTE_NAMES[pitch % 12];
+
                     return (
-                        <text key={`lbl-${i}`} x={6} y={y + 4} fontFamily="sans-serif" fontSize={11} fontWeight="bold" fill="#64748b">
-                            {lbl}
-                        </text>
+                        <foreignObject key={`tuning-input-${stringIdx}`} x={0} y={y - 12} width={36} height={24}>
+                            <input
+                                className="w-full h-full text-center text-[10px] font-bold font-mono border border-gray-300 bg-gray-50 focus:border-blue-500 outline-none uppercase text-gray-700"
+                                defaultValue={noteName}
+                                key={noteName} // Force re-render on external change
+                                onBlur={(e) => handleInputChange(stringIdx, e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.currentTarget.blur();
+                                    }
+                                }}
+                            />
+                        </foreignObject>
                     );
                 })}
+
 
                 {/* 1. Nut (Thick Bar) */}
                 <rect

@@ -1,9 +1,17 @@
-import { NoteName, IntervalLabel, ChordQuality, ShapeName } from "./types";
+import { NoteName, IntervalLabel, ChordQuality, ShapeName, TuningName } from "./types";
 
 export const NOTE_NAMES: NoteName[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 // Standard E Tuning (Low E to High E)
-export const TUNING = [4, 9, 14, 19, 23, 28]; // E, A, D, G, B, E (indices in a continuous chromatic scale where C=0)
+// E, A, D, G, B, E (indices in a continuous chromatic scale where C=0)
+export const TUNINGS: Record<TuningName, number[]> = {
+    'Standard': [4, 9, 14, 19, 23, 28],
+    'DADGAD': [2, 9, 14, 19, 21, 26],
+    'Open D': [2, 9, 14, 18, 21, 26], // D A D F# A D
+    'Drop D': [2, 9, 14, 19, 23, 28]
+};
+
+export const TUNING = TUNINGS['Standard']; // Default Legacy
 
 export const INTERVAL_LABELS: IntervalLabel[] = ['R', 'b2', '2', 'b3', '3', '4', 'b5', '5', '#5', '6', 'b7', '7'];
 

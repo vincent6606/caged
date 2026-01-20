@@ -51,22 +51,16 @@ export const audio = new AudioEngine();
 
 // Frequency Map Helper
 const BASE_A4 = 440;
-export function getFrequency(noteIndex: number): number {
-    // Distance from A4. Let's assume Middle C (C4) is noteIndex... wait.
-    // Our noteIndex is 0-11 (C-B). We need octaves.
-    // For the prototype, let's just use a simple relative calc from a low C.
-    // Low E string open is E2 (approx 82Hz).
-    // Let's assume note 0 (C) is C3 (130.81Hz).
-    const baseC = 130.81;
-    return baseC * Math.pow(2, noteIndex / 12);
+
+// Calculate frequency from Pitch Index (where 0 = C2, 4 = E2, etc.)
+export function getFrequency(pitchIndex: number): number {
+    // C2 is approx 65.41 Hz
+    const baseC = 65.406;
+    return baseC * Math.pow(2, pitchIndex / 12);
 }
 
-// Need a way to convert (string, fret) to absolute pitch index for frequency
-// E2 = 4 (E) but in lower octave.
-// Let's map String Open Frequencies directly.
-const STRING_FREQUENCIES = [82.41, 110.00, 146.83, 196.00, 246.94, 329.63]; // E2, A2, D3, G3, B3, E4
-
-export function getNoteFrequency(stringIdx: number, fret: number): number {
-    const openFreq = STRING_FREQUENCIES[stringIdx];
-    return openFreq * Math.pow(2, fret / 12);
+// Legacy helper, now using the generic calculation if needed, but page.tsx should use getFrequency(pitch)
+export function getNoteFrequency(stringIdx: number, fret: number, tuning: number[] = [4, 9, 14, 19, 23, 28]): number {
+    const pitch = tuning[stringIdx] + fret;
+    return getFrequency(pitch);
 }

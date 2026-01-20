@@ -140,7 +140,6 @@ input,
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  width: 64px;
 }
 
 .retro-icon:active img {
@@ -150,7 +149,6 @@ input,
 .retro-icon span {
   color: white;
   font-family: sans-serif;
-  font-size: 11px;
   text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
 }
 
