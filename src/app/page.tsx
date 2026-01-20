@@ -320,8 +320,8 @@ export default function Home() {
         top={180} left={20}
       />
 
-      {/* Main Layout Grid */}
-      <div className="w-full max-w-[1400px] h-full max-h-[900px] flex flex-col gap-4 z-10">
+      {/* Main Layout Grid - Windowed Mode */}
+      <div className="flex flex-col gap-4 z-10 w-[1100px] max-w-[90vw] h-[85vh] ml-36 shadow-2xl">
 
         {/* Window 2: Active Quest (Top Info Panel) */}
         {state.patternMode === 'tab' && fileData ? (
