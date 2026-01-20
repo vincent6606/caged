@@ -4,7 +4,7 @@ export const NOTE_NAMES: NoteName[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G'
 
 // Standard E Tuning (Low E to High E)
 // E, A, D, G, B, E (indices in a continuous chromatic scale where C=0)
-export const TUNINGS: Record<TuningName, number[]> = {
+export const TUNINGS: Record<Exclude<TuningName, 'Custom'>, number[]> = {
     'Standard': [4, 9, 14, 19, 23, 28],
     'DADGAD': [2, 9, 14, 19, 21, 26],
     'Open D': [2, 9, 14, 18, 21, 26], // D A D F# A D
