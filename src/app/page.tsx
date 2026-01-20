@@ -66,6 +66,8 @@ export default function Home() {
 
   const handleTuningChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newName = e.target.value as TuningName;
+    if (newName === 'Custom') return; // Do not apply preset tuning if Custom is selected
+
     setState(prev => ({
       ...prev,
       tuningName: newName,
