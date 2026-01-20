@@ -278,7 +278,7 @@ export default function Home() {
   };
 
   return (
-    <main className="retro-desktop font-sans select-none flex flex-col items-center justify-center p-4">
+    <main className="retro-desktop font-sans select-none flex flex-row items-center justify-center p-4 gap-8">
       {/* Pixel Art Waves Background */}
       <div
         className="absolute inset-0 opacity-10 pointer-events-none"
@@ -296,32 +296,31 @@ export default function Home() {
         accept=".gp,.gp3,.gp4,.gp5,.gpx"
       />
 
-      {/* Desktop Icons */}
-      <DesktopIcon
-        label="My Computer"
-        iconSrc="/icons/computer_explorer-4.png"
-        onClick={() => { }}
-        top={20} left={20}
-      />
+      {/* Desktop Icons Sidebar */}
+      <div className="flex flex-col gap-8 w-32 shrink-0 z-10 pt-10 h-full justify-start items-center">
+        <DesktopIcon
+          label="My Computer"
+          iconSrc="/icons/computer_explorer-4.png"
+          onClick={() => { }}
+        />
 
-      <DesktopIcon
-        label="Tab_Importer.exe"
-        iconSrc="/icons/upload_gp.png"
-        onClick={() => {
-          fileInputRef.current?.click();
-        }}
-        top={100} left={20}
-      />
+        <DesktopIcon
+          label="Tab_Importer.exe"
+          iconSrc="/icons/upload_gp.png"
+          onClick={() => {
+            fileInputRef.current?.click();
+          }}
+        />
 
-      <DesktopIcon
-        label="Export_PDF.exe"
-        iconSrc="/icons/printer_diskette-2.png"
-        onClick={handleExportPDF}
-        top={180} left={20}
-      />
+        <DesktopIcon
+          label="Export_PDF.exe"
+          iconSrc="/icons/printer_diskette-2.png"
+          onClick={handleExportPDF}
+        />
+      </div>
 
       {/* Main Layout Grid - Windowed Mode */}
-      <div className="flex flex-col gap-4 z-10 w-[calc(100vw-10rem)] max-w-[1450px] h-[85vh] ml-36 shadow-2xl">
+      <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1450px] h-[85vh] shadow-2xl min-w-0">
 
         {/* Window 2: Active Quest (Top Info Panel) */}
         {state.patternMode === 'tab' && fileData ? (

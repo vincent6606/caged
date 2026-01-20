@@ -9,11 +9,13 @@ interface DesktopIconProps {
 }
 
 export const DesktopIcon: React.FC<DesktopIconProps> = ({ label, iconSrc, onClick, top, left }) => {
+    const isAbsolute = top !== undefined && left !== undefined;
+
     return (
         <div
             onClick={onClick}
-            className="retro-icon absolute flex flex-col items-center gap-1 cursor-pointer w-28 text-center group"
-            style={{ top, left }}
+            className={`retro-icon flex flex-col items-center gap-1 cursor-pointer w-28 text-center group ${isAbsolute ? 'absolute' : 'relative mb-4'}`}
+            style={isAbsolute ? { top, left } : undefined}
         >
             <img
                 src={iconSrc}
