@@ -320,7 +320,7 @@ export default function Home() {
       </div>
 
       {/* Main Layout Grid - Windowed Mode */}
-      <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1450px] h-[85vh] shadow-2xl min-w-0 pr-4">
+      <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1280px] h-[85vh] shadow-2xl min-w-0 pr-4">
 
         {/* Window 2: Active Quest (Top Info Panel) */}
         {state.patternMode === 'tab' && fileData ? (
@@ -494,39 +494,37 @@ export default function Home() {
                 </div>
 
                 {/* 5. Sidebar (Right Side) */}
-                <div className="flex flex-col gap-4 items-center justify-center p-4 border-l-2 border-[var(--border-light)] bg-slate-100 min-w-[240px]">
+                <div className="flex flex-col gap-3 items-center justify-center p-2 border-l-2 border-[var(--border-light)] bg-slate-100 w-44 shrink-0">
                   {state.patternMode === 'tab' ? (
                     <>
-                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">ROOT NOTE</h3>
-                      <div className="w-40 h-40 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-9xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
+                      <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center">ROOT NOTE</h3>
+                      <div className="w-32 h-32 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-7xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
                         {NOTE_NAMES[state.root]}
                       </div>
                     </>
                   ) : state.tuningName !== 'Standard' ? (
                     <>
-                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">TUNING</h3>
-                      <div className="w-40 h-16 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-xl text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)] uppercase">
+                      <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center">TUNING</h3>
+                      <div className="w-32 h-12 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-base text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)] uppercase">
                         {state.tuningName}
                       </div>
-                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)] mt-4">ROOT</h3>
-                      <div className="w-40 h-40 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-9xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
+                      <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] mt-4 text-center">ROOT</h3>
+                      <div className="w-32 h-32 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-7xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
                         {NOTE_NAMES[state.root]}
                       </div>
                     </>
                   ) : (
                     <>
-                      <h3 className="text-2xl font-bold font-silkscreen text-[var(--text-secondary)]">ACTIVE SHAPE</h3>
+                      <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center leading-tight">ACTIVE<br />SHAPE</h3>
                       <div className="flex flex-row gap-4">
-                        {/* 4x Grid of Buttons? Or Just Row? Original was Row */}
-                        {/* We use grid to make them large enough */}
-                        <div className="flex flex-wrap gap-2 w-40 justify-center">
+                        <div className="flex flex-wrap gap-2 w-32 justify-center">
                           {(['C', 'A', 'G', 'E', 'D'] as const).map(shape => (
                             <button
                               key={shape}
                               onClick={() => handleShapeChange(shape)}
                               className={`
-                                w-12 h-12 flex items-center justify-center 
-                                font-[family-name:var(--font-silkscreen)] text-2xl font-bold 
+                                w-10 h-10 flex items-center justify-center 
+                                font-[family-name:var(--font-silkscreen)] text-xl font-bold 
                                 border-2 border-black shadow-[2px_2px_0_black]
                                 transition-all active:translate-y-1 active:shadow-none
                                 ${state.shape === shape

@@ -132,9 +132,6 @@ input,
 
 /* Desktop Icons */
 .retro-icon {
-  position: absolute;
-  top: 20px;
-  left: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
