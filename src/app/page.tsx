@@ -278,7 +278,7 @@ export default function Home() {
   };
 
   return (
-    <main className="retro-desktop font-sans select-none flex flex-row items-center justify-center p-4 gap-8">
+    <main className="retro-desktop font-sans select-none flex flex-row items-center justify-start p-4 gap-8 overflow-auto">
       {/* Pixel Art Waves Background */}
       <div
         className="absolute inset-0 opacity-10 pointer-events-none"
@@ -320,7 +320,7 @@ export default function Home() {
       </div>
 
       {/* Main Layout Grid - Windowed Mode */}
-      <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1450px] h-[85vh] shadow-2xl min-w-0">
+      <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1450px] h-[85vh] shadow-2xl min-w-0 pr-4">
 
         {/* Window 2: Active Quest (Top Info Panel) */}
         {state.patternMode === 'tab' && fileData ? (
