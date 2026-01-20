@@ -321,7 +321,7 @@ export default function Home() {
       />
 
       {/* Main Layout Grid - Windowed Mode */}
-      <div className="flex flex-col gap-4 z-10 w-[1100px] max-w-[90vw] h-[85vh] ml-36 shadow-2xl">
+      <div className="flex flex-col gap-4 z-10 w-[calc(100vw-10rem)] max-w-[1450px] h-[85vh] ml-36 shadow-2xl">
 
         {/* Window 2: Active Quest (Top Info Panel) */}
         {state.patternMode === 'tab' && fileData ? (
