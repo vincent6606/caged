@@ -322,9 +322,135 @@ export default function Home() {
       {/* Main Layout Grid - Windowed Mode */}
       <div className="flex flex-col gap-4 z-10 flex-1 max-w-[1280px] h-[85vh] shadow-2xl min-w-0 pr-4">
 
-        {/* Window 2: Active Quest (Top Info Panel) */}
-        {state.patternMode === 'tab' && fileData ? (
-          <RetroWindow title="Tab_Viewer.exe" className="h-[400px] shadow-xl bg-white w-full shrink-0">
+        {/* Window 2: Active Quest (Top Info Panel) - Always Visible for Controls */}
+        <RetroWindow title="Active_Session.exe" className="md:h-auto shadow-xl bg-white w-full">
+          <InfoPanel
+            root={state.root}
+            quality={state.quality}
+            bpm={90}
+            description="Connecting C.A.G.E.D positions across the fretboard."
+          >
+            {/* INJECTED CONTROLS */}
+            <div className="flex flex-wrap md:flex-nowrap gap-4 items-center">
+
+              {/* Root Selector */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Root</label>
+                <select
+                  value={state.root}
+                  onChange={(e) => setState(prev => ({ ...prev, root: parseInt(e.target.value) }))}
+                  className="retro-btn bg-white w-16 border-2 border-[var(--border-dark)] py-1 text-xs"
+                >
+                  {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+                </select>
+              </div>
+
+              {/* Tuning Selector */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Tuning</label>
+                <select
+                  value={state.tuningName === 'Custom' ? '' : state.tuningName} // Show Custom as blank or 'Custom' if added
+                  onChange={handleTuningChange}
+                  className="retro-btn bg-white w-24 border-2 border-[var(--border-dark)] py-1 text-xs"
+                >
+                  {Object.keys(TUNINGS).map(t => <option key={t} value={t}>{t}</option>)}
+                  {state.tuningName === 'Custom' && <option value="Custom">Custom</option>}
+                </select>
+              </div>
+
+              {/* Quality Buttons */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Quality</label>
+                <div className="flex gap-1">
+                  {(['Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'] as ChordQuality[]).map(q => (
+                    <button
+                      key={q}
+                      onClick={() => {
+                        const nextState = { ...state, quality: q, patternMode: 'box' as const };
+                        setState(nextState);
+
+                        // Audio Preview
+                        const notes = calculateFretboardState(nextState);
+                        playChordNotes(notes);
+                      }}
+                      className={getBtnClass(state.quality === q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-8 w-[2px] bg-[var(--border-light)] mx-2 hidden md:block"></div>
+
+              {/* View/Mode Buttons */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View Mode</label>
+                <div className="flex gap-1 items-center">
+                  <button
+                    className={`${getBtnClass(state.patternMode === 'box')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
+                    onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'box' }))}
+                    disabled={state.tuningName !== 'Standard'}
+                    title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
+                  >
+                    Box
+                  </button>
+                  <button
+                    className={`${getBtnClass(state.patternMode === 'waterfall')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
+                    onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'waterfall' }))}
+                    disabled={state.tuningName !== 'Standard'}
+                    title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
+                  >
+                    Waterfall
+                  </button>
+                  <button
+                    className={getBtnClass(state.patternMode === 'edit')}
+                    onClick={() => {
+                      if (state.patternMode !== 'edit') {
+                        const currentNotes = calculateFretboardState(state);
+                        setState(prev => ({ ...prev, patternMode: 'edit', currentNotes }));
+                      } else {
+                        setState(prev => ({ ...prev, patternMode: 'edit' }));
+                      }
+                    }}
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    className={getBtnClass(state.patternMode === 'tab')}
+                    onClick={() => {
+                      if (!fileData) {
+                        fileInputRef.current?.click();
+                      } else {
+                        setState(prev => ({ ...prev, patternMode: 'tab' }));
+                      }
+                    }}
+                  >
+                    Tab
+                  </button>
+
+                  {/* Reset Button */}
+                  <button
+                    onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
+                    className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.patternMode === 'edit'
+                      ? 'bg-red-100 hover:bg-red-200 opacity-100'
+                      : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                      }`}
+                    disabled={state.patternMode !== 'edit'}
+                    title="Clear all notes (Edit Mode only)"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+          </InfoPanel>
+        </RetroWindow>
+
+        {/* Optional Window: Tab Player (Only visible in Tab Mode) */}
+        {state.patternMode === 'tab' && fileData && (
+          <RetroWindow title="Tab_Viewer.exe" className="h-[250px] shadow-xl bg-white w-full shrink-0">
             <AlphaTabPlayer
               fileData={fileData}
               onNotesDecoded={handleNotesDecoded}
@@ -333,131 +459,6 @@ export default function Home() {
                 setState(prev => ({ ...prev, root, quality: quality as any }));
               }}
             />
-          </RetroWindow>
-        ) : (
-          <RetroWindow title="Active_Session.exe" className="md:h-auto shadow-xl bg-white w-full">
-            <InfoPanel
-              root={state.root}
-              quality={state.quality}
-              bpm={90}
-              description="Connecting C.A.G.E.D positions across the fretboard."
-            >
-              {/* INJECTED CONTROLS */}
-              <div className="flex flex-wrap md:flex-nowrap gap-4 items-center">
-
-                {/* Root Selector */}
-                <div className="flex flex-col gap-1 items-center">
-                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Root</label>
-                  <select
-                    value={state.root}
-                    onChange={(e) => setState(prev => ({ ...prev, root: parseInt(e.target.value) }))}
-                    className="retro-btn bg-white w-16 border-2 border-[var(--border-dark)] py-1 text-xs"
-                  >
-                    {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
-                  </select>
-                </div>
-
-                {/* Tuning Selector */}
-                <div className="flex flex-col gap-1 items-center">
-                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Tuning</label>
-                  <select
-                    value={state.tuningName === 'Custom' ? '' : state.tuningName} // Show Custom as blank or 'Custom' if added
-                    onChange={handleTuningChange}
-                    className="retro-btn bg-white w-24 border-2 border-[var(--border-dark)] py-1 text-xs"
-                  >
-                    {Object.keys(TUNINGS).map(t => <option key={t} value={t}>{t}</option>)}
-                    {state.tuningName === 'Custom' && <option value="Custom">Custom</option>}
-                  </select>
-                </div>
-
-                {/* Quality Buttons */}
-                <div className="flex flex-col gap-1 items-center">
-                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Quality</label>
-                  <div className="flex gap-1">
-                    {(['Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'] as ChordQuality[]).map(q => (
-                      <button
-                        key={q}
-                        onClick={() => {
-                          const nextState = { ...state, quality: q, patternMode: 'box' as const };
-                          setState(nextState);
-
-                          // Audio Preview
-                          const notes = calculateFretboardState(nextState);
-                          playChordNotes(notes);
-                        }}
-                        className={getBtnClass(state.quality === q)}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="h-8 w-[2px] bg-[var(--border-light)] mx-2 hidden md:block"></div>
-
-                {/* View/Mode Buttons */}
-                <div className="flex flex-col gap-1 items-center">
-                  <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View Mode</label>
-                  <div className="flex gap-1 items-center">
-                    <button
-                      className={`${getBtnClass(state.patternMode === 'box')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
-                      onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'box' }))}
-                      disabled={state.tuningName !== 'Standard'}
-                      title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
-                    >
-                      Box
-                    </button>
-                    <button
-                      className={`${getBtnClass(state.patternMode === 'waterfall')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
-                      onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'waterfall' }))}
-                      disabled={state.tuningName !== 'Standard'}
-                      title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
-                    >
-                      Waterfall
-                    </button>
-                    <button
-                      className={getBtnClass(state.patternMode === 'edit')}
-                      onClick={() => {
-                        if (state.patternMode !== 'edit') {
-                          const currentNotes = calculateFretboardState(state);
-                          setState(prev => ({ ...prev, patternMode: 'edit', currentNotes }));
-                        } else {
-                          setState(prev => ({ ...prev, patternMode: 'edit' }));
-                        }
-                      }}
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      className={getBtnClass(state.patternMode === 'tab')}
-                      onClick={() => {
-                        if (!fileData) {
-                          fileInputRef.current?.click();
-                        } else {
-                          setState(prev => ({ ...prev, patternMode: 'tab' }));
-                        }
-                      }}
-                    >
-                      Tab
-                    </button>
-
-                    {/* Reset Button */}
-                    <button
-                      onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
-                      className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.patternMode === 'edit'
-                        ? 'bg-red-100 hover:bg-red-200 opacity-100'
-                        : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
-                        }`}
-                      disabled={state.patternMode !== 'edit'}
-                      title="Clear all notes (Edit Mode only)"
-                    >
-                      Reset
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </InfoPanel>
           </RetroWindow>
         )}
 
