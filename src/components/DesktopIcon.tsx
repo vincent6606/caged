@@ -12,7 +12,7 @@ export const DesktopIcon: React.FC<DesktopIconProps> = ({ label, iconSrc, onClic
     return (
         <div
             onClick={onClick}
-            className="retro-icon absolute flex flex-col items-center gap-1 cursor-pointer w-28 text-center group"
+            className="retro-icon absolute flex flex-col items-center gap-1 cursor-pointer w-28 text-center group z-50"
             style={{ top, left }}
         >
             <img
