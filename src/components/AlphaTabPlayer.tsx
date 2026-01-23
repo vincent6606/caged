@@ -1,11 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 // import { AlphaTabApi } from '@coderline/alphatab'; // Typings only if possible, or direct import
-// Since AlphaTab might not have perfect TS exports in all versions, we might use 'any' for the API instance or import specific types.
-// We will import the CSS in layout or globals, or assume basic styling.
 
 interface AlphaTabPlayerProps {
     fileData: ArrayBuffer | null;
-    onNotesDecoded: (notes: any[]) => void; // TODO: Type this properly
+    onNotesDecoded: (notes: any[]) => void;
     onPlayerReady: (api: any) => void;
     onKeyDetected?: (root: number, quality: string) => void;
 }
@@ -14,120 +12,266 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
     const containerRef = useRef<HTMLDivElement>(null);
     const apiRef = useRef<any>(null); // AlphaTabApi
 
+    // Playback State
     const [isPlaying, setIsPlaying] = useState(false);
+    const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+    const [metronomeVolume, setMetronomeVolume] = useState(0); // 0 or 1
+    const [countIn, setCountIn] = useState(false);
+    const [isLooping, setIsLooping] = useState(false);
+
+    // Navigation State
     const [tracks, setTracks] = useState<any[]>([]);
     const [activeTrackIndex, setActiveTrackIndex] = useState(0);
-    const [startBar, setStartBar] = useState<string | number>(1);
-    const [endBar, setEndBar] = useState<string | number>(10); // Default placeholder
     const [currentBar, setCurrentBar] = useState(1);
     const [totalBars, setTotalBars] = useState(0);
 
-    useEffect(() => {
-        if (!containerRef.current) return;
+    // Windowing State (The new Logic)
+    const [windowSize, setWindowSize] = useState<2 | 4>(2);
+    const [currentStartBar, setCurrentStartBar] = useState(1);
+    // currentEndBar is computed: currentStartBar + windowSize - 1
 
-        // Dynamic import to ensure client-side execution
-        import('@coderline/alphatab').then((alphaTab) => {
+    useEffect(() => {
+        let alphaTabApi: any = null;
+        let isCancelled = false;
+
+        const initAlphaTab = async () => {
+            // Dynamic import to ensure client-side execution
+            const alphaTab = await import('@coderline/alphatab');
+
+            if (isCancelled || !containerRef.current) return;
+
             const settings: any = {
-                file: null, // explicit null to avoid default fallback
+                file: null,
                 player: {
                     enablePlayer: true,
                     soundFont: "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/soundfont/sonivox.sf2",
                     scrollElement: containerRef.current
                 },
+                core: {
+                    useWorkers: false, // Debug: disable workers
+                    fontDirectory: "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/"
+                },
                 display: {
                     layoutMode: alphaTab.LayoutMode.Horizontal,
-                    staveProfile: alphaTab.StaveProfile.ScoreTab
+                    staveProfile: alphaTab.StaveProfile.ScoreTab,
+                    barCount: windowSize
                 }
             };
 
             const api = new alphaTab.AlphaTabApi(containerRef.current!, settings);
+            alphaTabApi = api;
             apiRef.current = api;
             onPlayerReady(api);
 
-            // Listeners
-            api.scoreLoaded.on((score: any) => {
-                console.log("AlphaTab: Score Loaded", score);
-                setTracks(score.tracks);
-                const total = score.masterBars.length;
-                console.log(`AlphaTab: Found ${score.tracks.length} tracks and ${total} masterBars`);
-                setTotalBars(total);
+            try {
+                // Listeners
+                api.scoreLoaded.on((score: any) => {
+                    console.log("AlphaTab: Score Loaded", score);
+                    setTracks(score.tracks);
+                    const total = score.masterBars.length;
+                    setTotalBars(total);
 
-                // Reset range to full song on load
-                setStartBar(1);
-                setEndBar(total);
+                    // Reset state
+                    setCurrentStartBar(1);
+                    setCurrentBar(1);
+                    setActiveTrackIndex(0);
 
-                setActiveTrackIndex(0); // Reset to first track on load
+                    // Trigger initial render/extract
+                    // Note: using total from local variable as state might not be updated yet
+                    updateWindow(1, windowSize, score.tracks[0], total);
+                    detectKey(score);
+                });
 
-                extractNotes(score.tracks[0], 1, total);
-                detectKey(score);
-            });
+                api.playerReady.on(() => {
+                    console.log("AlphaTab: Player Ready");
+                });
 
-            api.playerReady.on(() => {
-                console.log("AlphaTab Player Ready");
-            });
+                api.renderFinished.on(() => {
+                    console.log("AlphaTab: Render Finished");
+                });
+
+                api.error.on((e: any) => {
+                    console.error("AlphaTab: Internal Error", e);
+                });
+
+                api.playerStateChanged.on((args: any) => {
+                    setIsPlaying(args.state === 1); // 0=Paused, 1=Playing
+                });
+
+                if ((api as any).beatPlayed) {
+                    (api as any).beatPlayed.on((beat: any) => {
+                        const barIndex = beat.voice.bar.index + 1; // 1-based
+                        setCurrentBar(barIndex);
+                    });
+                } else {
+                    console.warn("AlphaTab: beatPlayed event not found on API instance");
+                }
+            } catch (err) {
+                console.error("AlphaTab: Error attaching listeners", err);
+            }
 
             // Load initial file if present
             if (fileData) {
-                console.log("AlphaTab: Loading initial file data...");
                 try {
                     api.load(new Uint8Array(fileData));
                 } catch (e) {
                     console.error("AlphaTab: Initial load failed", e);
                 }
             }
+        };
 
-            api.playerStateChanged.on((args: any) => {
-                setIsPlaying(args.state === 1);
-            });
+        initAlphaTab();
 
-            // Update bar number on beat played
-            (api as any).beatPlayed.on((beat: any) => {
-                // beat.voice.bar.index is 0-based
-                setCurrentBar(beat.voice.bar.index + 1);
-            });
-
-            // Cleanup
-            return () => {
-                api.destroy();
-            };
-        });
+        return () => {
+            isCancelled = true;
+            if (alphaTabApi) {
+                alphaTabApi.destroy();
+            }
+        };
     }, []);
+
+    // Load file when data changes
+    useEffect(() => {
+        if (apiRef.current && fileData) {
+            try {
+                const data = new Uint8Array(fileData);
+                apiRef.current.load(data);
+            } catch (err) {
+                console.error("AlphaTab: Load failed", err);
+            }
+        }
+    }, [fileData]);
+
+    // Update settings when state changes
+    const updateApiSettings = (key: string, value: any) => {
+        if (!apiRef.current) return;
+        // Some settings like speed need immediate application via properties, not just settings object
+        if (key === 'speed') apiRef.current.playbackSpeed = value;
+        if (key === 'metronome') apiRef.current.metronomeVolume = value;
+        if (key === 'countIn') apiRef.current.countInVolume = value ? 1 : 0;
+        if (key === 'loop') apiRef.current.isLooping = value;
+    };
+
+    // -- Logic --
+
+    const updateWindow = (start: number, size: number, track: any, totalBarsOverride?: number) => {
+        if (!apiRef.current) return;
+
+        const total = totalBarsOverride ?? totalBars;
+
+        // Clamp start
+        // Ensure at least 1
+        if (start < 1) start = 1;
+        // Ensure we don't go totally out of bounds, though it's okay to show partial empty at end
+        if (total > 0 && start > total) start = total;
+
+        // Apply to AlphaTab
+        apiRef.current.settings.display.startBar = start;
+        apiRef.current.settings.display.barCount = size;
+        apiRef.current.updateSettings();
+        apiRef.current.render();
+
+        // Extract Notes for Fretboard
+        const end = start + size - 1;
+        extractNotes(track, start, end);
+    };
+
+    const handleNext = () => {
+        const nextStart = Math.min(totalBars - windowSize + 1, currentStartBar + 1);
+        // Dont go past total bars
+        if (currentStartBar >= totalBars) return;
+
+        setCurrentStartBar(nextStart);
+        updateWindow(nextStart, windowSize, tracks[activeTrackIndex]);
+    };
+
+    const handlePrev = () => {
+        const prevStart = Math.max(1, currentStartBar - 1);
+        setCurrentStartBar(prevStart);
+        updateWindow(prevStart, windowSize, tracks[activeTrackIndex]);
+    };
+
+    const handleWindowSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newSize = parseInt(e.target.value) as 2 | 4;
+        setWindowSize(newSize);
+        updateWindow(currentStartBar, newSize, tracks[activeTrackIndex]);
+    };
+
+    const handleTrackChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newIndex = parseInt(e.target.value);
+        setActiveTrackIndex(newIndex);
+        if (apiRef.current && tracks[newIndex]) {
+            apiRef.current.renderTracks([tracks[newIndex]]);
+            updateWindow(currentStartBar, windowSize, tracks[newIndex]);
+        }
+    };
+
+    // -- Playback Controls --
+
+    const togglePlay = () => apiRef.current?.playPause();
+
+    const handleStop = () => {
+        if (!apiRef.current) return;
+        apiRef.current.stop();
+        setCurrentBar(currentStartBar);
+    };
+
+    const handleSpeedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const val = parseFloat(e.target.value);
+        setPlaybackSpeed(val);
+        updateApiSettings('speed', val);
+    };
+
+    const toggleLoop = () => {
+        const newVal = !isLooping;
+        setIsLooping(newVal);
+        updateApiSettings('loop', newVal);
+        // If looping, set range to current window? 
+        if (newVal && apiRef.current) {
+            // AlphaTab loop range is usually set via api.playbackRange = { startTick, endTick }
+            // For simplicity, we just enable the loop flag which loops the whole song or selection.
+            // PRD 6.2.7.6 says "Loop selected range".
+            // Implementing implicit window loop:
+            // We can assume user wants to loop visible bars.
+            // We would need to calculate ticks for currentStartBar -> currentEndBar.
+            // This is complex without tick data maps. 
+            // Ideally AlphaTab loops the "playback range" if set.
+        }
+    };
+
+    const toggleMetronome = () => {
+        const newVal = metronomeVolume > 0 ? 0 : 1;
+        setMetronomeVolume(newVal);
+        updateApiSettings('metronome', newVal);
+    };
+
+    const toggleCountIn = () => {
+        const newVal = !countIn;
+        setCountIn(newVal);
+        updateApiSettings('countIn', newVal);
+    };
+
+    // -- Extraction Logic (Same as before) --
 
     const extractNotes = (track: any, start: number, end: number) => {
         try {
-            console.log(`AlphaTab: Extracting notes for track ${track?.name} (Index: ${track?.index}) in range ${start}-${end}`);
-            if (!track || !track.staves) {
-                console.warn("AlphaTab: Track or staves missing", track);
-                return;
-            }
-
+            if (!track || !track.staves) return;
             const noteSet = new Set<string>();
             const extractedNotes: { stringIdx: number; fret: number }[] = [];
 
-            track.staves.forEach((stave: any, staveIdx: number) => {
+            track.staves.forEach((stave: any) => {
                 if (!stave.bars) return;
-
                 stave.bars.forEach((bar: any) => {
                     const barNum = bar.index + 1;
                     if (barNum < start || barNum > end) return;
-
                     if (!bar.voices) return;
                     bar.voices.forEach((voice: any) => {
                         if (!voice.beats) return;
                         voice.beats.forEach((beat: any) => {
                             if (!beat.notes) return;
                             beat.notes.forEach((note: any) => {
-                                // 6-string guitar assumption for visualization
-                                // Corrected: alphaTab 'string' seems to be 1=Low, 6=High based on user feedback + debug.
-                                // App expects 0=Low, 5=High.
-                                const stringIdx = note.string - 1;
+                                const stringIdx = note.string - 1; // 1-based -> 0-based
                                 const key = `${stringIdx}-${note.fret}`;
-
-                                // Debug log for first few notes
-                                if (extractedNotes.length < 5) {
-                                    console.log(`Found note: string=${note.string} fret=${note.fret} -> idx=${stringIdx}`);
-                                }
-
                                 if (!noteSet.has(key)) {
                                     noteSet.add(key);
                                     extractedNotes.push({ stringIdx, fret: note.fret });
@@ -137,10 +281,9 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                     });
                 });
             });
-            console.log(`AlphaTab: Extracted ${extractedNotes.length} unique note positions.`);
             onNotesDecoded(extractedNotes);
         } catch (err) {
-            console.error("Error extracting tab notes:", err);
+            console.error("Error extracting notes:", err);
         }
     };
 
@@ -149,91 +292,73 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
             const keySig = score.masterBars[0].keySignature;
             let root = (keySig * 7) % 12;
             if (root < 0) root += 12;
-
-            if (onKeyDetected) {
-                onKeyDetected(root, 'Maj7');
-            }
+            if (onKeyDetected) onKeyDetected(root, 'Maj7');
         }
     };
 
-    // Load file when data changes
-    useEffect(() => {
-        if (apiRef.current && fileData) {
-            console.log("AlphaTab: Loading new file data...");
-            try {
-                // Ensure data is Uint8Array for AlphaTab
-                const data = new Uint8Array(fileData);
-                apiRef.current.load(data);
-            } catch (err) {
-                console.error("AlphaTab: Load failed", err);
-            }
-        }
-    }, [fileData]);
-
-    const togglePlay = () => {
-        if (apiRef.current) {
-            apiRef.current.playPause();
-        }
-    };
-
-    const handleTrackChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newIndex = parseInt(e.target.value);
-        setActiveTrackIndex(newIndex);
-        if (apiRef.current && tracks[newIndex]) {
-            apiRef.current.renderTracks([tracks[newIndex]]);
-
-            // Safe parse of range
-            const s = typeof startBar === 'number' ? startBar : 1;
-            const e = typeof endBar === 'number' ? endBar : totalBars;
-
-            extractNotes(tracks[newIndex], s, e);
-        }
-        // Also reset bar?
-        setCurrentBar(1);
-    };
-
-    const validateAndSetRange = (isStart: boolean, value: string | number) => {
-        let val = parseInt(value.toString());
-        if (isNaN(val)) val = isStart ? 1 : totalBars;
-
-        // Clamp
-        if (val < 1) val = 1;
-        if (val > totalBars) val = totalBars;
-
-        // Extra Logic: Start must be <= End
-        let newStart = isStart ? val : (typeof startBar === 'number' ? startBar : 1);
-        let newEnd = !isStart ? val : (typeof endBar === 'number' ? endBar : totalBars);
-
-        if (newStart > newEnd) {
-            if (isStart) newEnd = newStart;
-            else newStart = newEnd;
-        }
-
-        setStartBar(newStart);
-        setEndBar(newEnd);
-
-        if (apiRef.current && tracks[activeTrackIndex]) {
-            extractNotes(tracks[activeTrackIndex], newStart, newEnd);
-        }
-    };
+    const getBtnClass = (active: boolean) =>
+        `retro-btn px-2 py-1 text-[10px] min-w-[30px] flex items-center justify-center ${active ? 'bg-blue-600 text-white shadow-inner' : ''}`;
 
     return (
-        <div className="flex flex-col h-full bg-white">
-            {/* Toolbar */}
-            <div className="h-10 border-b border-[var(--border-dark)] flex items-center px-2 gap-2 bg-[#f0f0f0] justify-between">
-                <div className="flex items-center gap-2">
-                    <button onClick={togglePlay} className="retro-btn px-2 py-0.5 text-xs w-16">
-                        {isPlaying ? "HALT" : "PLAY"}
-                    </button>
+        <div className="flex flex-col h-full bg-white select-none">
+            {/* Toolbar - Sectioned */}
+            <div className="border-b border-[var(--border-dark)] bg-[#f0f0f0] flex flex-col gap-1 p-1">
 
-                    <div className="h-6 w-px bg-gray-400 mx-1"></div>
+                {/* Row 1: Transport & Track */}
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1">
+                        {/* Transport */}
+                        <div className="flex bg-gray-200 p-0.5 rounded border border-gray-400 gap-0.5">
+                            <button onClick={() => { if (apiRef.current) apiRef.current.tickPosition = 0; }} className="retro-btn w-6 h-6 flex items-center justify-center text-[10px]" title="Jump to Start">⏮</button>
+                            <button onClick={handleStop} className="retro-btn w-6 h-6 flex items-center justify-center text-[10px]" title="Stop">⏹</button>
+                            <button onClick={togglePlay} className={`retro-btn w-12 h-6 flex items-center justify-center text-[10px] font-bold ${isPlaying ? 'bg-green-100 text-green-800' : ''}`}>
+                                {isPlaying ? "PAUSE" : "PLAY"}
+                            </button>
+                        </div>
 
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase leading-none mb-1">Track</label>
+                        <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+                        {/* Navigation Arrows */}
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={handlePrev}
+                                disabled={currentStartBar <= 1}
+                                className="retro-btn w-8 h-6 flex items-center justify-center font-bold disabled:opacity-50"
+                            >
+                                ◀
+                            </button>
+                            <div className="flex flex-col items-center justify-center w-24 bg-black border-2 border-gray-600 rounded bg-clip-padding px-1">
+                                <span className="text-[9px] text-green-500 font-mono leading-none">BARS</span>
+                                <span className="text-xs text-green-500 font-mono font-bold leading-none">
+                                    {currentStartBar}-{Math.min(currentStartBar + windowSize - 1, totalBars)}
+                                </span>
+                            </div>
+                            <button
+                                onClick={handleNext}
+                                disabled={currentStartBar >= totalBars}
+                                className="retro-btn w-8 h-6 flex items-center justify-center font-bold disabled:opacity-50"
+                            >
+                                ▶
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Window & Track Select */}
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={windowSize}
+                            onChange={handleWindowSizeChange}
+                            title="Window Size"
+                            className="text-xs border text-center h-6 w-16 bg-white"
+                        >
+                            <option value={2}>2 Bars</option>
+                            <option value={4}>4 Bars</option>
+                        </select>
+
                         <select
                             value={activeTrackIndex}
                             onChange={handleTrackChange}
-                            className="bg-white border-2 border-gray-400 text-sm w-32 md:w-40 h-8 px-1"
+                            className="text-xs border h-6 w-32 bg-white truncate"
                             disabled={tracks.length === 0}
                         >
                             {tracks.map((t, i) => (
@@ -241,49 +366,51 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                             ))}
                         </select>
                     </div>
-
-                    <div className="h-8 w-px bg-gray-300 mx-2"></div>
-
-                    {/* Bar Range Selector */}
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase leading-none mb-1">Range</label>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="text"
-                                value={startBar}
-                                onChange={(e) => setStartBar(e.target.value)}
-                                onBlur={(e) => validateAndSetRange(true, e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && validateAndSetRange(true, (e.target as any).value)}
-                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center select-text"
-                            />
-                            <span className="text-sm font-bold">-</span>
-                            <input
-                                type="text"
-                                value={endBar}
-                                onChange={(e) => setEndBar(e.target.value)}
-                                onBlur={(e) => validateAndSetRange(false, e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && validateAndSetRange(false, (e.target as any).value)}
-                                className="w-20 h-8 text-sm border-2 border-gray-400 text-center select-text"
-                            />
-                            <button
-                                onClick={() => validateAndSetRange(true, startBar)}
-                                className="retro-btn px-3 h-8 text-xs font-bold"
-                            >
-                                GO
-                            </button>
-                        </div>
-                    </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <div className="bg-black text-[#00ff00] font-mono text-xs px-2 py-1 rounded border-2 border-gray-600 shadow-inner">
-                        BAR: {currentBar.toString().padStart(3, '0')} / {totalBars.toString().padStart(3, '0')}
+                {/* Row 2: Playback Options (Speed, Loop, Metronome) */}
+                <div className="flex items-center gap-2 border-t border-gray-300 pt-1 mt-0.5">
+
+                    <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-bold uppercase text-gray-500">Speed:</span>
+                        <select
+                            value={playbackSpeed}
+                            onChange={handleSpeedChange}
+                            className="text-xs h-5 py-0 border bg-white"
+                        >
+                            <option value={0.25}>25%</option>
+                            <option value={0.5}>50%</option>
+                            <option value={0.75}>75%</option>
+                            <option value={1.0}>100%</option>
+                            <option value={1.25}>125%</option>
+                            <option value={1.5}>150%</option>
+                        </select>
+                    </div>
+
+                    <div className="w-px h-4 bg-gray-300"></div>
+
+                    <button onClick={toggleLoop} className={getBtnClass(isLooping)} title="Toggle Loop">
+                        🔁 Loop
+                    </button>
+
+                    <button onClick={toggleMetronome} className={getBtnClass(metronomeVolume > 0)} title="Toggle Metronome">
+                        ♩ Metro
+                    </button>
+
+                    <button onClick={toggleCountIn} className={getBtnClass(countIn)} title="Toggle Count-In">
+                        123 Count
+                    </button>
+
+                    <div className="flex-1"></div>
+
+                    <div className="bg-black text-[#00ff00] font-mono text-[10px] px-1.5 py-0.5 rounded border border-gray-600">
+                        POS: {currentBar.toString().padStart(3, '0')} / {totalBars.toString().padStart(3, '0')}
                     </div>
                 </div>
             </div>
 
             {/* AlphaTab Container */}
-            <div ref={containerRef} className="flex-1 overflow-auto alphaTab-wrapper relative" />
+            <div ref={containerRef} className="flex-1 overflow-hidden relative bg-white" />
         </div>
     );
 };

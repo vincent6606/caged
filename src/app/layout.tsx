@@ -27,6 +27,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={silkscreen.variable}>
+        {/* AlphaTab CSS for rendering Music Score/Target Notation */}
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/alphaTab.css" />
         {children}
       </body>
     </html>

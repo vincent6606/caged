@@ -37,6 +37,8 @@ export default function Home() {
     activeTabNotes: []
   });
 
+
+
   const [activeTrack, setActiveTrack] = useState(BACKING_TRACKS[2].id);
   const [fileData, setFileData] = useState<ArrayBuffer | null>(null);
 
@@ -499,9 +501,14 @@ export default function Home() {
         </RetroWindow>
 
         {/* Optional Window: Tab Player (Only visible in Tab Mode or Edit Mode from Tab) */}
+        {/* Optional Window: Tab Player (Only visible in Tab Mode or Edit Mode from Tab) */}
         {(state.patternMode === 'tab' || (state.patternMode === 'edit' && state.previousPatternMode === 'tab')) && fileData && (
-          <RetroWindow title="Tab_Viewer.exe" className="h-[250px] shadow-xl bg-white w-full shrink-0">
+          <RetroWindow
+            title="Tab_Viewer.exe"
+            className="flex-1 min-h-0 shadow-xl bg-white w-full flex flex-col"
+          >
             <AlphaTabPlayer
+              key={fileData ? fileData.byteLength : 'empty'}
               fileData={fileData}
               onNotesDecoded={handleNotesDecoded}
               onPlayerReady={(api) => { console.log('Player ready', api); }}
@@ -513,7 +520,10 @@ export default function Home() {
         )}
 
         {/* Window 3: Fretboard Visualizer (Main Bottom) */}
-        <RetroWindow title="Fretboard_Visualizer - [24 Fret]" className="flex-1 flex flex-col shadow-xl bg-white min-h-0 w-full">
+        <RetroWindow
+          title="Fretboard_Visualizer - [24 Fret]"
+          className="flex-1 min-h-0 flex flex-col shadow-xl bg-white w-full"
+        >
           <div className="flex-1 overflow-auto p-2 md:p-4 flex flex-col gap-4 relative bg-dot-pattern h-full">
 
             {/* Fretboard Frame */}
