@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Silkscreen } from "next/font/google";
+import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 
 const silkscreen = Silkscreen({
@@ -30,6 +31,7 @@ export default function RootLayout({
         {/* AlphaTab CSS for rendering Music Score/Target Notation */}
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/alphaTab.css" />
         {children}
+        <Analytics />
       </body>
     </html>
   );
