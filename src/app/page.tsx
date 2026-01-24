@@ -108,8 +108,26 @@ export default function Home() {
     const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
 
-    // FIX PREVENT EDIT IN TAB MODE
-    if (state.patternMode === 'tab') return;
+    // ALLOW EDIT IN TAB MODE
+    if (state.patternMode === 'tab') {
+      setState(prev => {
+        const currentNotes = prev.activeTabNotes || [];
+        const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+        let nextNotes;
+
+        if (exists) {
+          nextNotes = currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret));
+        } else {
+          nextNotes = [...currentNotes, { stringIdx, fret }];
+        }
+
+        return {
+          ...prev,
+          activeTabNotes: nextNotes
+        };
+      });
+      return;
+    }
 
     setState(prev => {
       // 1. Determine the base notes we are editing
@@ -152,6 +170,15 @@ export default function Home() {
     });
   };
 
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stringIdx: number; fret: number } | null>(null);
+
+  // Close context menu on any other click
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
+  }, []);
+
   const handleNoteDoubleClick = (stringIdx: number, fret: number) => {
     const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
@@ -159,44 +186,19 @@ export default function Home() {
     // Calc Root based on current Tuning
     const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
 
-    let newShape = state.shape;
+    // SIMPLE ANCHOR LOGIC: Only change the root context
+    setState(prev => ({
+      ...prev,
+      root: chromaticIdx,
+      selectedNote: { stringIdx, fret } // Anchor position for octave logic
+      // Do not change mode or shape
+    }));
+  };
 
-    // Auto-Shape Logic only applies to Standard Tuning
-    if (state.tuningName === 'Standard') {
-      const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
-      const sameRoot = chromaticIdx === state.root;
-
-      // Resolve effective mode
-      const originMode = state.patternMode === 'edit' ? state.previousPatternMode : state.patternMode;
-
-      // CYCLE LOGIC: If same root AND in box/waterfall mode, cycle through valid shapes
-      if (sameRoot && validShapes && (originMode === 'box' || originMode === 'waterfall')) {
-        const currentIndex = validShapes.indexOf(state.shape);
-        // If current shape is valid, pick next; otherwise start at 0
-        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % validShapes.length;
-        newShape = validShapes[nextIndex];
-      }
-      // DEFAULT LOGIC: If new root or current shape invalid, pick first valid
-      else if (validShapes && !validShapes.includes(state.shape)) {
-        newShape = validShapes[0];
-      }
-    }
-
-    setState(prev => {
-      // Determine next mode using fresh 'prev' state
-      // If we are in 'edit' (triggered by single click), check if we came from 'tab'
-      const originMode = prev.patternMode === 'edit' ? prev.previousPatternMode : prev.patternMode;
-      const nextMode = originMode === 'tab' ? 'tab' : 'box';
-
-      return {
-        ...prev,
-        patternMode: nextMode,
-        root: chromaticIdx,
-        shape: newShape,
-        selectedNote: { stringIdx, fret },
-        customNotes: nextMode === 'tab' ? prev.customNotes : [] // Only clear custom notes if leaving Edit mode (effectively resetting to box)
-      };
-    });
+  const handleNoteRightClick = (stringIdx: number, fret: number, e: React.MouseEvent) => {
+    // Prevent default context menu already handled in Fretboard, but just in case
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, stringIdx, fret });
   };
 
   // Hover Handler for Audio Preview
@@ -549,6 +551,7 @@ export default function Home() {
                       onTuningChange={handleManualTuningChange}
                       onNoteClick={handleNoteClick}
                       onNoteDoubleClick={handleNoteDoubleClick}
+                      onNoteRightClick={handleNoteRightClick}
                       onNoteHover={handleNoteHover}
                     />
                   </div>
@@ -607,6 +610,68 @@ export default function Home() {
         </RetroWindow>
 
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-[#c0c0c0] border-2 border-white shadow-[2px_2px_0_black] p-1 flex flex-col gap-1 min-w-[150px] select-none"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-blue-800 text-white px-2 py-0.5 text-[10px] font-bold mb-1">
+            NOTE OPTIONS
+          </div>
+
+          <button
+            className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white"
+            onClick={() => {
+              const chromaticIdx = (state.tuning[contextMenu.stringIdx] + contextMenu.fret) % 12;
+              setState(prev => ({
+                ...prev,
+                root: chromaticIdx,
+                selectedNote: { stringIdx: contextMenu.stringIdx, fret: contextMenu.fret }
+              }));
+              setContextMenu(null);
+            }}
+          >
+            Set as Root
+          </button>
+
+          {state.tuningName === 'Standard' && (
+            <button
+              className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white"
+              onClick={() => {
+                const { stringIdx, fret } = contextMenu;
+                const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
+                const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
+
+                if (validShapes && validShapes.length > 0) {
+                  setState(prev => ({
+                    ...prev,
+                    root: chromaticIdx,
+                    shape: validShapes[0], // Default to first valid shape
+                    patternMode: 'box',
+                    selectedNote: { stringIdx, fret }
+                  }));
+                }
+                setContextMenu(null);
+              }}
+            >
+              Jump to Shape
+            </button>
+          )}
+
+          <div className="h-px bg-gray-400 my-0.5"></div>
+
+          <button
+            className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white text-gray-500"
+            onClick={() => setContextMenu(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
     </main>
   );
 }

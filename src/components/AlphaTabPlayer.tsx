@@ -66,9 +66,9 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
             try {
                 // Listeners
                 api.scoreLoaded.on((score: any) => {
-                    console.log("AlphaTab: Score Loaded", score);
+                    // console.log("AlphaTab: Score Loaded", score);
                     setTracks(score.tracks);
-                    const total = score.masterBars.length;
+                    const total = score.masterBars?.length || 0;
                     setTotalBars(total);
 
                     // Reset state
@@ -87,7 +87,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                 });
 
                 api.renderFinished.on(() => {
-                    console.log("AlphaTab: Render Finished");
+                    // console.log("AlphaTab: Render Finished");
                 });
 
                 api.error.on((e: any) => {
@@ -95,17 +95,39 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                 });
 
                 api.playerStateChanged.on((args: any) => {
+                    console.log("AlphaTab: Player State Changed", args);
                     setIsPlaying(args.state === 1); // 0=Paused, 1=Playing
                 });
 
-                if ((api as any).beatPlayed) {
-                    (api as any).beatPlayed.on((beat: any) => {
-                        const barIndex = beat.voice.bar.index + 1; // 1-based
-                        setCurrentBar(barIndex);
+                // Cursor Tracking: Robust Implementation
+                if ((api as any).playerPositionChanged) {
+                    (api as any).playerPositionChanged.on((args: any) => {
+                        const currentTick = args.currentTick !== undefined ? args.currentTick : api.tickPosition;
+                        if (currentTick !== undefined) {
+                            const masterBars = api.score?.masterBars || [];
+                            for (let i = 0; i < masterBars.length; i++) {
+                                const bar = masterBars[i] as any;
+                                const nextBarStart = (masterBars[i + 1] as any)?.startTick ?? Infinity;
+                                if (currentTick >= bar.startTick && currentTick < nextBarStart) {
+                                    const barIndex = bar.index + 1;
+                                    setCurrentBar(prev => (prev !== barIndex ? barIndex : prev));
+                                    break;
+                                }
+                            }
+                        }
                     });
-                } else {
-                    console.warn("AlphaTab: beatPlayed event not found on API instance");
                 }
+
+                if ((api as any).playedBeatChanged) {
+                    (api as any).playedBeatChanged.on((args: any) => {
+                        const beat = args?.beat || args;
+                        if (beat?.voice?.bar?.index !== undefined) {
+                            const barIndex = beat.voice.bar.index + 1;
+                            setCurrentBar(prev => (prev !== barIndex ? barIndex : prev));
+                        }
+                    });
+                }
+
             } catch (err) {
                 console.error("AlphaTab: Error attaching listeners", err);
             }

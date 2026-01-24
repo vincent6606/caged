@@ -8,10 +8,11 @@ interface FretboardProps {
     onTuningChange?: (stringIdx: number, newPitch: number) => void;
     onNoteClick?: (stringIdx: number, fret: number) => void;
     onNoteDoubleClick?: (stringIdx: number, fret: number) => void;
+    onNoteRightClick?: (stringIdx: number, fret: number, e: React.MouseEvent) => void;
     onNoteHover?: (stringIdx: number, fret: number) => void;
 }
 
-export function Fretboard({ notes, tuning = [4, 9, 14, 19, 23, 28], onTuningChange, onNoteClick, onNoteDoubleClick, onNoteHover }: FretboardProps) {
+export function Fretboard({ notes, tuning = [4, 9, 14, 19, 23, 28], onTuningChange, onNoteClick, onNoteDoubleClick, onNoteRightClick, onNoteHover }: FretboardProps) {
     // Constants
     const S_H = 35;
     const F_W = 40; // Aggressively reduced to 40 to fit 24 frets
@@ -166,6 +167,10 @@ export function Fretboard({ notes, tuning = [4, 9, 14, 19, 23, 28], onTuningChan
                                 className="cursor-pointer hover:fill-blue-500/10"
                                 onClick={() => onNoteClick?.(s, 0)}
                                 onDoubleClick={() => onNoteDoubleClick?.(s, 0)}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    onNoteRightClick?.(s, 0, e);
+                                }}
                                 onMouseEnter={() => onNoteHover?.(s, 0)}
                             />
 
@@ -184,6 +189,10 @@ export function Fretboard({ notes, tuning = [4, 9, 14, 19, 23, 28], onTuningChan
                                         onClick={() => onNoteClick?.(s, f)}
                                         // double click logic preserved
                                         onDoubleClick={() => onNoteDoubleClick?.(s, f)}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            onNoteRightClick?.(s, f, e);
+                                        }}
                                         onMouseEnter={() => onNoteHover?.(s, f)}
                                     />
                                 );
