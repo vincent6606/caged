@@ -140,13 +140,6 @@ export default function Home() {
         const visibleNotes = calculateFretboardState(prev);
         currentNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
 
-        // FIX: If note is already selected/visible in a non-edit mode, do NOT remove it.
-        // Just keep the current state (audio already played).
-        const alreadyExists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
-        if (alreadyExists) {
-          return prev;
-        }
-
         nextMode = 'edit';
         prevModeToStore = prev.patternMode; // Store ONLY when entering edit mode
       }

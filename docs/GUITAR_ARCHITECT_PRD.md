@@ -700,61 +700,80 @@ Interactive 24-fret guitar neck that renders notes based on the current applicat
 
 ### 6.1.3 Unified Editing Model
 
-All visualization modes (Box, Horizontal) support the same editing behavior:
+All visualization modes (Box, Waterfall) support the same editing behavior. Any click on the fretboard while in a preset mode (Box/Waterfall) will **snapshot** the current visible notes and transition to Edit mode.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          INTERACTION MODEL                                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  SINGLE CLICK on visible note:                                              │
+│  SINGLE CLICK on visible note (in Box/Waterfall mode):                      │
 │    1. Play audio feedback (note sound)                                      │
-│    2. Hide the note (toggle OFF)                                            │
-│    3. Note becomes "excluded" from current selection                        │
+│    2. Snapshot all preset notes into customNotes                            │
+│    3. Remove the clicked note from customNotes                              │
+│    4. Switch to Edit mode                                                   │
 │                                                                              │
-│  SINGLE CLICK on empty fret position:                                       │
+│  SINGLE CLICK on empty fret position (in Box/Waterfall mode):               │
 │    1. Play audio feedback (note sound)                                      │
-│    2. Show a note at that position (toggle ON)                              │
-│    3. Note is "added" to current selection                                  │
+│    2. Snapshot all preset notes into customNotes                            │
+│    3. Add the clicked note to customNotes                                   │
+│    4. Switch to Edit mode                                                   │
 │                                                                              │
-│  DOUBLE CLICK on root note:                                                 │
-│    1. Cycle to the next CAGED shape (C → A → G → E → D → C)                │
-│    2. Re-render fretboard with new shape position                           │
-│    3. Reset any custom edits to show default shape notes                    │
+│  SINGLE CLICK (in Edit mode):                                               │
+│    1. Play audio feedback                                                   │
+│    2. Toggle the note ON/OFF in customNotes                                 │
 │                                                                              │
-│  RESET BUTTON:                                                              │
-│    1. Restore all notes to the default preset state                         │
-│    2. Clear any custom additions/exclusions                                 │
+│  DOUBLE CLICK on any note:                                                  │
+│    1. Play audio feedback                                                   │
+│    2. Set the clicked note as the new root (anchor)                         │
+│    3. Stay in current mode (no shape cycling)                               │
+│    4. Update selectedNote for octave positioning                            │
+│                                                                              │
+│  RESET BUTTON (Edit mode only):                                             │
+│    1. Clear customNotes array                                               │
+│    2. Fretboard shows empty until user returns to Box/Waterfall             │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 6.1.4 State Model
 
+The application uses a **snapshot-based editing model** where clicking any fret in a preset mode captures the current view and transitions to Edit mode.
+
 ```typescript
-interface FretboardState {
-    // Preset-driven defaults
-    preset: PresetDefinition;          // e.g., "Maj7 Arpeggio", "Dorian Scale"
+interface AppState {
+    // Core musical parameters
     root: number;                       // 0-11 (C=0, C#=1, ... B=11)
+    quality: ChordQuality;              // 'Maj7', 'Dom7', 'Min7', 'Min7b5', 'Dim7'
     shape: 'C' | 'A' | 'G' | 'E' | 'D'; // CAGED position
-    mode: 'box' | 'horizontal';         // Visualization mode
+    patternMode: 'box' | 'waterfall' | 'edit' | 'tab';  // Current visualization mode
     
-    // User edits (overlay on top of preset)
-    customExclusions: Set<string>;      // Notes hidden by user (e.g., "2-5" = string 2, fret 5)
-    customAdditions: Set<string>;       // Notes added by user
+    // Tuning
+    tuningName: TuningName;
+    tuning: number[];                   // [0]: Low E, [5]: High E
     
-    // Computed visible notes = (presetNotes - customExclusions) + customAdditions
+    // Edit mode data (snapshot of notes)
+    customNotes: Array<{ stringIdx: number; fret: number }>;
+    
+    // Anchor for octave positioning
+    selectedNote: { stringIdx: number; fret: number } | null;
+    
+    // Tab mode data
+    activeTabNotes: Array<{ stringIdx: number; fret: number }>;
+    
+    // Mode transition tracking
+    previousPatternMode?: PatternMode;
 }
 ```
 
 ### 6.1.5 Acceptance Criteria
 
 ```gherkin
-Feature: Fretboard Visualization with Unified Editing
+Feature: Fretboard Visualization with Snapshot Editing
 
 Scenario: Display CMaj7 E-Shape in Box Mode
   Given the root is set to "C" (index 0)
-  And the preset is "Maj7"
+  And the quality is "Maj7"
   And the shape is "E"
   And the mode is "Box"
   When the fretboard renders
@@ -762,34 +781,37 @@ Scenario: Display CMaj7 E-Shape in Box Mode
   And the root notes should display "R" label
   And the root notes should be colored #00ff00
 
-Scenario: Single-click to hide a visible note
-  Given a note is displayed on string 2, fret 5
+Scenario: Single-click visible note enters Edit mode and removes note
+  Given the mode is "Box" with CMaj7 E-shape displayed
+  And a note is visible on string 2, fret 5
   When the user single-clicks the note
   Then a triangle wave tone at the note's frequency plays
-  And the note is hidden from the fretboard
-  And the note position is added to customExclusions
+  And the mode changes to "Edit"
+  And all preset notes except the clicked one are in customNotes
+  And the clicked note is removed from the fretboard
 
-Scenario: Single-click to add a note on empty fret
-  Given no note is displayed on string 3, fret 7
+Scenario: Single-click empty fret enters Edit mode and adds note
+  Given the mode is "Box" with CMaj7 E-shape displayed
+  And no note is displayed on string 3, fret 7
   When the user single-clicks the empty fret position
   Then a triangle wave tone at the note's frequency plays
-  And a note appears at string 3, fret 7
-  And the note position is added to customAdditions
+  And the mode changes to "Edit"
+  And all preset notes plus the new note are in customNotes
 
-Scenario: Double-click to cycle shape
-  Given the current shape is "C"
-  And the user double-clicks a root note on string 1
-  When the shape cycles
-  Then the shape changes to "A"
-  And the fretboard re-renders with A-shape positions
-  And customExclusions and customAdditions are cleared
+Scenario: Double-click anchors root without changing shape
+  Given the current root is "C"
+  And the user double-clicks a note that is "E" (fret 5 on string 0)
+  When the double-click is processed
+  Then the root changes to "E" (index 4)
+  And the shape remains unchanged
+  And the fretboard re-renders with the new root
 
-Scenario: Reset clears all edits
-  Given the user has hidden 2 notes and added 1 note
+Scenario: Reset clears customNotes in Edit mode
+  Given the mode is "Edit"
+  And customNotes contains 5 notes
   When the user clicks the Reset button
-  Then all notes return to the default preset state
-  And customExclusions is empty
-  And customAdditions is empty
+  Then customNotes becomes empty
+  And the fretboard shows no notes
 ```
 
 ---
@@ -1600,7 +1622,8 @@ function getNoteFrequency(stringIdx: number, fret: number, tuning: number[]): nu
 The application uses a **Retro OS (Windows 95)** aesthetic to create a memorable, nostalgic experience while maintaining modern usability standards.
 
 ### 10.1.0 Inspiration
-- **Visual & Interaction Reference**: [Chus Margallo Space](https://www.awwwards.com/sites/chus-margallo-space) - For its spatial layout, smooth transitions, and distinct "digital object" feel.
+- **Visual & Interaction Reference**: [Chus Margallo Space](https://chusmargallo.space/) - For its spatial layout, smooth transitions, and distinct "digital object" feel.
+- **Styling Reference**: [NES.css](https://nostalgic-css.github.io/NES.css/) - NES-style CSS Framework for the retro aesthetic.
 
 ### 10.1.1 Core Principles
 
