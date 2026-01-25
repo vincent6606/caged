@@ -96,10 +96,10 @@ The system SHALL respond to user actions with these state changes:
 | Click **Custom** tab | `contentSource = 'custom'` |
 | Click **Tab** tab | `contentSource = 'tab'` |
 | Toggle **Box ↔ Horizontal** | `viewStyle` toggles |
-| Click **C/A/G/E/D** button | `cagedShape` changes (box view only) |
+| Click **C/A/G/E/D** button | `contentSource = 'preset'`, `cagedShape` changes |
 | Click **root note** selector | `root` changes |
-| **Single-click** any fret | Copy to `custom`, toggle note |
-| **Double-click** any note | Set `anchor` position |
+| **Single-click** any fret | Copy to `custom`, toggle note, switch to `custom` |
+| **Double-click** any note | Set `root` to clicked note, **stay in current mode** |
 | Upload **.gp file** | Load tab, `contentSource = 'tab'` |
 | Click **Save as Shape** | Save pattern to shapes library |
 
@@ -107,9 +107,16 @@ The system SHALL respond to user actions with these state changes:
 - **WHEN** user single-clicks any fret while in preset mode
 - **THEN** current preset notes are copied to custom, clicked note toggled, contentSource changes to `custom`
 
-#### Scenario: Double-click sets anchor
-- **WHEN** user double-clicks any note
-- **THEN** anchor updates to clicked position, mode remains unchanged
+#### Scenario: Double-click sets root but stays in mode
+- **WHEN** user double-clicks any note while in preset mode
+- **THEN** `root` updates to clicked note's chromatic index
+- **AND** mode remains `preset` (does NOT switch to custom)
+
+#### Scenario: CAGED selector switches to preset mode
+- **WHEN** user clicks a CAGED button (C, A, G, E, D) while in custom mode
+- **THEN** `contentSource` changes to `preset`
+- **AND** `cagedShape` changes to clicked shape
+- **AND** `customNotes` are preserved in memory (not cleared)
 
 ---
 

@@ -28,10 +28,10 @@ The system SHALL support two view styles:
 
 | State | Description | Additional Controls |
 |-------|-------------|---------------------|
-| `box` | Single CAGED position (4-5 fret span) | CAGED shape selector (C, A, G, E, D), Waterfall toggle |
+| `box` | Single CAGED position (4-5 fret span) | CAGED shape selector (C, A, G, E, D) |
 | `horizontal` | Full neck, all octaves visible | None |
 
-**Implementation Note**: The current `waterfall` mode becomes a toggle within `box` view style, not a separate content source. When enabled, it shows the diagonal 2-1-2 Neo-Soul pattern within the selected CAGED shape.
+**Implementation Note**: The current `waterfall` mode will become a preset pattern type in the preset bank (e.g., "Neo-Soul Waterfall"). It is NOT included in this refactor.
 
 #### Scenario: Box view shows CAGED selector
 - **WHEN** view style is `box`
@@ -40,14 +40,6 @@ The system SHALL support two view styles:
 #### Scenario: Horizontal view hides CAGED selector
 - **WHEN** view style is `horizontal`
 - **THEN** CAGED shape selector is hidden (not applicable)
-
-#### Scenario: User enables waterfall pattern
-- **WHEN** user toggles waterfall checkbox while in box view
-- **THEN** notes filter to show only the 2-1-2 diagonal pattern
-
-#### Scenario: Waterfall unavailable in horizontal view
-- **WHEN** view style is `horizontal`
-- **THEN** waterfall toggle is hidden or disabled
 
 ---
 
@@ -74,7 +66,6 @@ interface AppState {
 
   // View-specific (box only)
   cagedShape: ShapeName;
-  showWaterfall: boolean;
 
   // Content-specific: preset
   presetCategory: PresetCategory;
@@ -105,7 +96,6 @@ The system SHALL provide a `calculateFretboardState(state: AppState)` function t
 1. Selects note source based on `contentSource`
 2. Applies view style filtering based on `viewStyle`
 3. Uses `cagedShape` only when `viewStyle === 'box'`
-4. Applies `showWaterfall` filter only when `viewStyle === 'box'`
 
 #### Scenario: Preset content in box view
 - **WHEN** `contentSource === 'preset'` and `viewStyle === 'box'`
@@ -127,7 +117,7 @@ The system SHALL respond to fretboard clicks as follows:
 | Action | Behavior |
 |--------|----------|
 | **Single-click** any fret | Snapshot visible notes to `customNotes`, toggle clicked note, switch to `custom` |
-| **Double-click** any note | Set `root` to clicked note, switch to `custom`, preserve `customNotes` |
+| **Double-click** any note | Set `root` to clicked note, **stay in current mode** |
 | **Hover** active note | Play audio preview |
 
 **Key Invariant**: `customNotes` are NEVER cleared by click interactions. They persist until user explicitly clicks Reset.
@@ -143,10 +133,16 @@ The system SHALL respond to fretboard clicks as follows:
 - **THEN** clicked note is toggled in `customNotes`
 - **AND** `contentSource` remains `'custom'`
 
-#### Scenario: Double-click sets root and enters custom
-- **WHEN** user double-clicks any note
+#### Scenario: Double-click sets root but stays in mode
+- **WHEN** user double-clicks any note while in preset mode
 - **THEN** `root` updates to the chromatic index of clicked note
-- **AND** `contentSource` changes to `'custom'`
+- **AND** `contentSource` remains `'preset'` (does NOT switch to custom)
+- **AND** preset recalculates to show shape for new root
+
+#### Scenario: Double-click in custom mode transposes
+- **WHEN** user double-clicks any note while in custom mode
+- **THEN** `root` updates to the chromatic index of clicked note
+- **AND** `contentSource` remains `'custom'`
 - **AND** existing `customNotes` transpose with the new root (intervals preserved)
 
 ---

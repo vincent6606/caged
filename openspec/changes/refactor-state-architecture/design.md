@@ -52,15 +52,13 @@ interface AppState {
 
 **Rationale**: This mirrors the spec's vision and allows independent control of each dimension.
 
-### Decision 2: Remove Waterfall as Top-Level Mode
+### Decision 2: Defer Waterfall to Preset Bank
 
-Current `waterfall` mode becomes either:
-- A preset pattern in the preset bank (e.g., "Neo-Soul Waterfall" arpeggio pattern)
-- A view style variant (checkbox: "Show waterfall pattern")
+Current `waterfall` mode is NOT included in this refactor.
 
-**Chosen approach**: Waterfall becomes a toggle/checkbox within box view, not a separate content source.
+**Future approach**: Waterfall will become a preset pattern type in the preset bank (e.g., "Neo-Soul Waterfall" arpeggio pattern).
 
-**Rationale**: Waterfall is a *way of viewing* an arpeggio, not a separate content source.
+**Rationale**: Keeps this refactor focused on state architecture. Waterfall can be properly implemented as a preset with diagonal 2-1-2 interval logic.
 
 ### Decision 3: Rename "Edit" to "Custom"
 
@@ -77,10 +75,10 @@ Current `edit` mode → `contentSource: 'custom'`
 
 **Double-click** on any note:
 1. Set the clicked note as the new `root`
-2. Switch `contentSource` to `'custom'`
-3. Do NOT clear existing `customNotes` (they transpose with new root)
+2. **Stay in current mode** (do NOT switch to custom)
+3. If in custom mode, transpose `customNotes` intervals
 
-This preserves current "snapshot and edit" behavior while enabling root changes.
+**Rationale**: Double-click sets key center without disrupting current view. Single-click is the entry point to custom editing.
 
 ### Decision 5: CAGED Selector Re-Entry
 
@@ -95,7 +93,7 @@ When user clicks a CAGED shape button (C, A, G, E, D):
 
 | View Style | Available Controls |
 |------------|-------------------|
-| `box` | CAGED shape selector (C, A, G, E, D), Waterfall toggle |
+| `box` | CAGED shape selector (C, A, G, E, D) |
 | `horizontal` | None (full neck, all positions) |
 
 CAGED selector is hidden when `viewStyle === 'horizontal'`.
@@ -120,7 +118,46 @@ CAGED selector is hidden when `viewStyle === 'horizontal'`.
 
 ## Open Questions
 
-1. Should "Waterfall" be a toggle within box view, or a separate view style alongside box/horizontal?
-   - **Proposed**: Toggle within box view
-2. How should presets be organized in the UI?
-   - **Deferred**: Preset bank UI is a separate change
+None remaining.
+
+---
+
+## UI Mockup
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Active_Session.exe                                          [_][□][X]      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─ CONTENT SOURCE ──────────────────────────────────────────────────────┐  │
+│  │  [▣ PRESET]  [ SHAPES ]  [ CUSTOM ]  [ TAB ]                          │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌─ CONTROLS ─────────────────────────────────────────────────────────────┐ │
+│  │  Root: [C ▼]   Type: [Maj7 ▼]   View: [BOX│horz]   [RESET]            │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────┬─────────────────────┐ │
+│  │                                                  │   ACTIVE SHAPE      │ │
+│  │                  FRETBOARD                       │   ┌───┐ ┌───┐      │ │
+│  │                  (24 frets)                      │   │ C │ │ A │      │ │
+│  │                                                  │   └───┘ └───┘      │ │
+│  │   0   1   2   3   4   5   6   7   8   ...  24   │   ┌───┐ ┌───┐      │ │
+│  │   ●───────────●─────────────────────────────    │   │ G │ │▣E │      │ │
+│  │   ────────────────●─────────────────────────    │   └───┘ └───┘      │ │
+│  │   ────────────────────●─────────────────────    │   ┌───┐            │ │
+│  │   ────────────────●─────────────────────────    │   │ D │            │ │
+│  │   ●───────────●─────────────────────────────    │   └───┘            │ │
+│  └──────────────────────────────────────────────────┴─────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Control Visibility Rules
+
+| Element | Visible When |
+|---------|-------------|
+| Type dropdown | `contentSource = 'preset'` |
+| CAGED sidebar | `viewStyle = 'box'` |
+| RESET button | `contentSource = 'custom'` |
+| Bar range controls | `contentSource = 'tab'` |

@@ -14,9 +14,7 @@
 - [ ] 2.1 Refactor `calculateFretboardState()` in `src/lib/engine/caged.ts`:
   - Branch on `contentSource` to select note source
   - Branch on `viewStyle` to apply box/horizontal filtering
-  - Apply `showWaterfall` filter when `viewStyle === 'box'`
-- [ ] 2.2 Extract waterfall logic into separate helper function `filterWaterfallPattern()`
-- [ ] 2.3 Ensure backward compatibility: function handles both old and new state shapes during transition
+- [ ] 2.2 Ensure backward compatibility: function handles both old and new state shapes during transition
 
 ## 3. Update State Management in page.tsx
 
@@ -28,7 +26,6 @@
     presetCategory: 'arpeggio',
     presetType: 'Maj7',
     cagedShape: 'E',
-    showWaterfall: false,
     // ... rest
   });
   ```
@@ -40,8 +37,8 @@
   - Switch `contentSource` to `'custom'`
 - [ ] 3.5 Update `handleNoteDoubleClick`:
   - Set `root` to clicked note's chromatic index
-  - Switch `contentSource` to `'custom'`
-  - Preserve existing `customNotes` (transpose with new root)
+  - **Stay in current mode** (do NOT switch to custom)
+  - If in custom mode, transpose existing `customNotes` intervals
 - [ ] 3.6 Create handler `handleCagedShapeClick(shape: ShapeName)`:
   - Switch `contentSource` to `'preset'`
   - Set `cagedShape` to clicked shape
@@ -50,13 +47,12 @@
 
 ## 4. Update UI Controls
 
-- [ ] 4.1 Replace mode buttons (Box/Waterfall/Edit/Tab) with:
+- [ ] 4.1 Replace mode buttons (Box/Edit/Tab) with:
   - Content source tabs: Preset | Shapes | Custom | Tab
   - View style toggle: Box | Horizontal
-- [ ] 4.2 Add waterfall checkbox within box view controls
-- [ ] 4.3 Conditionally show CAGED selector only when `viewStyle === 'box'`
-- [ ] 4.4 Update CAGED buttons to call `handleCagedShapeClick()` (re-enters preset mode)
-- [ ] 4.5 Update "Reset" button to work with `contentSource: 'custom'`
+- [ ] 4.2 Conditionally show CAGED selector only when `viewStyle === 'box'`
+- [ ] 4.3 Update CAGED buttons to call `handleCagedShapeClick()` (re-enters preset mode)
+- [ ] 4.4 Update "Reset" button to work with `contentSource: 'custom'`
 
 ## 5. Update AlphaTabPlayer Integration
 

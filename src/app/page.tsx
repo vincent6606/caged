@@ -4,42 +4,40 @@ import React, { useState, useEffect, useRef } from 'react';
 import { InfoPanel } from '@/components/InfoPanel';
 import { RetroWindow } from '@/components/RetroWindow';
 import { Fretboard } from '@/components/Fretboard';
-import { YouTubePlayer, YouTubePlayerRef } from '@/components/YouTubePlayer';
 import { AppState, ShapeName, ChordQuality, TuningName } from '@/lib/engine/types';
 import { calculateFretboardState } from '@/lib/engine/caged';
 import { NOTE_NAMES, STRING_TO_SHAPE_MAP, TUNINGS } from '@/lib/engine/constants';
 import { audio, getNoteFrequency } from '@/lib/audio/context';
-
-const BACKING_TRACKS = [
-  { id: '2b_4Zozqc3E', title: 'Neo Soul (Am) - 75 BPM', root: 9, quality: 'Min7' }, // A Min7
-  { id: 'P2K7D-uP2II', title: 'Slow Blues (A) - 60 BPM', root: 9, quality: 'Dom7' }, // A Dom7
-  { id: 'G9XogUbFp0Q', title: 'R&B Chords (C) - 90 BPM', root: 0, quality: 'Maj7' }, // C Maj7
-];
-
 import { DesktopIcon } from '@/components/DesktopIcon';
 import { AlphaTabPlayer } from '@/components/AlphaTabPlayer';
 
 export default function Home() {
-  const playerRef = useRef<YouTubePlayerRef>(null);
-
-  // Initialize state with customNotes for 'edit'  // State
+  // Initialize state with new architecture
   const [state, setState] = useState<AppState>({
+    // === NEW STATE ARCHITECTURE ===
+    contentSource: 'preset',
+    viewStyle: 'box',
     root: 0, // C
-    quality: 'Maj7',
-    shape: 'C', // Default start
-    patternMode: 'box',
-    tuningName: 'Standard',
     tuning: TUNINGS['Standard'],
-    playbackSpeed: 1,
+    tuningName: 'Standard',
+    anchor: null,
+    cagedShape: 'E',
+    presetCategory: 'arpeggio',
+    presetType: 'Maj7',
+    customNotes: [],
+    activeTabNotes: [],
+    tabBarRange: { start: 1, end: 16 },
     isPlaying: false,
-    customNotes: [], // For Edit Mode
+    playbackSpeed: 1,
+    // === DEPRECATED (for backward compatibility) ===
+    quality: 'Maj7',
+    shape: 'E',
+    patternMode: 'box',
     selectedNote: null,
-    activeTabNotes: []
   });
 
 
 
-  const [activeTrack, setActiveTrack] = useState(BACKING_TRACKS[2].id);
   const [fileData, setFileData] = useState<ArrayBuffer | null>(null);
 
   const activeNotes = calculateFretboardState(state);
@@ -50,22 +48,6 @@ export default function Home() {
   }, []);
 
   // Handlers
-  const handleRootChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setState(prev => ({ ...prev, root: parseInt(e.target.value) }));
-  };
-
-  const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setState(prev => ({ ...prev, quality: e.target.value as ChordQuality }));
-  };
-
-  const handleShapeChange = (shape: ShapeName) => {
-    setState(prev => ({ ...prev, shape }));
-  };
-
-  const handlePatternModeChange = (mode: string) => {
-    setState(prev => ({ ...prev, patternMode: mode as any }));
-  };
-
   const handleTuningChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newName = e.target.value as TuningName;
     if (newName === 'Custom') return; // Do not apply preset tuning if Custom is selected
@@ -97,7 +79,7 @@ export default function Home() {
       reader.onload = (evt) => {
         if (evt.target?.result) {
           setFileData(evt.target.result as ArrayBuffer);
-          setState(prev => ({ ...prev, patternMode: 'tab' }));
+          setState(prev => ({ ...prev, contentSource: 'tab', patternMode: 'tab' }));
         }
       };
       reader.readAsArrayBuffer(file);
@@ -108,60 +90,54 @@ export default function Home() {
     const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
 
-    // ALLOW EDIT IN TAB MODE
-    if (state.patternMode === 'tab') {
+    // TAB MODE: Toggle notes in activeTabNotes
+    if (state.contentSource === 'tab') {
       setState(prev => {
         const currentNotes = prev.activeTabNotes || [];
         const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
-        let nextNotes;
-
-        if (exists) {
-          nextNotes = currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret));
-        } else {
-          nextNotes = [...currentNotes, { stringIdx, fret }];
-        }
-
-        return {
-          ...prev,
-          activeTabNotes: nextNotes
-        };
+        const nextNotes = exists
+          ? currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret))
+          : [...currentNotes, { stringIdx, fret }];
+        return { ...prev, activeTabNotes: nextNotes };
       });
       return;
     }
 
-    setState(prev => {
-      // 1. Determine the base notes we are editing
-      let currentNotes = prev.customNotes || [];
-      let nextMode = prev.patternMode;
-      let prevModeToStore = prev.previousPatternMode;
+    // Use delayed execution to allow double-click to cancel
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+    }
 
-      // If we are NOT in edit mode, snapshot the current view into customNotes
-      if (prev.patternMode !== 'edit') {
-        const visibleNotes = calculateFretboardState(prev);
-        currentNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
+    clickTimeoutRef.current = setTimeout(() => {
+      console.log('[CLICK] Single-click → switching to custom mode');
+      setState(prev => {
+        let currentNotes = prev.customNotes || [];
 
-        nextMode = 'edit';
-        prevModeToStore = prev.patternMode; // Store ONLY when entering edit mode
-      }
+        // If NOT in custom mode, snapshot current visible notes first
+        if (prev.contentSource !== 'custom') {
+          const visibleNotes = calculateFretboardState(prev);
+          currentNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
+        }
 
-      // 2. Toggle the specific note clicked
-      const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
-      let nextNotes;
+        // Toggle the clicked note
+        const exists = currentNotes.some(n => n.stringIdx === stringIdx && n.fret === fret);
+        const nextNotes = exists
+          ? currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret))
+          : [...currentNotes, { stringIdx, fret }];
 
-      if (exists) {
-        nextNotes = currentNotes.filter(n => !(n.stringIdx === stringIdx && n.fret === fret));
-      } else {
-        nextNotes = [...currentNotes, { stringIdx, fret }];
-      }
-
-      return {
-        ...prev,
-        patternMode: nextMode as any, // Cast to ensure TS is happy if needed, though AppState should allow 'edit'
-        customNotes: nextNotes,
-        previousPatternMode: prevModeToStore // Store previous mode for recovery
-      };
-    });
+        return {
+          ...prev,
+          contentSource: 'custom',
+          customNotes: nextNotes,
+          // Keep deprecated fields in sync
+          patternMode: 'edit',
+        };
+      });
+    }, 150); // 150ms delay - fast enough for UX, long enough for double-click detection
   };
+
+  // Ref to track click timeout for single/double-click disambiguation
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; stringIdx: number; fret: number } | null>(null);
 
@@ -173,18 +149,41 @@ export default function Home() {
   }, []);
 
   const handleNoteDoubleClick = (stringIdx: number, fret: number) => {
+    // CANCEL the pending single-click
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+
     const freq = getNoteFrequency(stringIdx, fret, state.tuning);
     audio.playTone(freq);
 
-    // Calc Root based on current Tuning
+    // Calculate root based on current tuning
     const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
 
-    // SIMPLE ANCHOR LOGIC: Only change the root context
+    console.log('[CLICK] Double-click → setting root to', NOTE_NAMES[chromaticIdx], ', staying in mode:', state.contentSource);
+
+    // Set root and anchor, STAY in current mode (do not switch to custom)
     setState(prev => ({
       ...prev,
       root: chromaticIdx,
-      selectedNote: { stringIdx, fret } // Anchor position for octave logic
-      // Do not change mode or shape
+      anchor: { stringIdx, fret },
+      // Keep deprecated field in sync
+      selectedNote: { stringIdx, fret }
+    }));
+  };
+
+  // NEW: CAGED selector handler - switches to preset mode
+  const handleCagedShapeClick = (shape: ShapeName) => {
+    console.log('[CLICK] CAGED shape:', shape, '→ contentSource: preset, cagedShape:', shape);
+    setState(prev => ({
+      ...prev,
+      contentSource: 'preset',
+      cagedShape: shape,
+      // Keep deprecated fields in sync
+      shape: shape,
+      patternMode: 'box',
+      // NOTE: customNotes are PRESERVED, not cleared
     }));
   };
 
@@ -205,18 +204,6 @@ export default function Home() {
     }
   };
 
-  const handleTrackChange = (videoId: string) => {
-    const track = BACKING_TRACKS.find(t => t.id === videoId);
-    setActiveTrack(videoId);
-    if (track) {
-      setState(prev => ({
-        ...prev,
-        root: track.root,
-        quality: track.quality as ChordQuality,
-        shape: 'C'
-      }));
-    }
-  };
 
   // Helper for active button style (High Contrast - Bright Blue)
   const getBtnClass = (isActive: boolean) =>
@@ -314,7 +301,7 @@ export default function Home() {
 
   const handleNotesDecoded = (notes: { stringIdx: number; fret: number }[]) => {
     console.log("Notes Decoded:", notes.length);
-    setState(prev => ({ ...prev, activeTabNotes: notes }));
+    setState(prev => ({ ...prev, activeTabNotes: notes, contentSource: 'tab', patternMode: 'tab' }));
   };
 
   return (
@@ -366,7 +353,7 @@ export default function Home() {
         <RetroWindow title="Active_Session.exe" className="md:h-auto shadow-xl bg-white w-full">
           <InfoPanel
             root={state.root}
-            quality={state.quality}
+            quality={state.presetType}
             bpm={90}
             description="Connecting C.A.G.E.D positions across the fretboard."
           >
@@ -406,14 +393,21 @@ export default function Home() {
                     <button
                       key={q}
                       onClick={() => {
-                        const nextState = { ...state, quality: q, patternMode: 'box' as const };
+                        const nextState = {
+                          ...state,
+                          presetType: q,
+                          quality: q, // Keep deprecated field in sync
+                          contentSource: 'preset' as const,
+                          patternMode: 'box' as const
+                        };
+                        console.log('[CLICK] Quality:', q, '→ contentSource: preset, presetType:', q);
                         setState(nextState);
 
                         // Audio Preview
                         const notes = calculateFretboardState(nextState);
                         playChordNotes(notes);
                       }}
-                      className={getBtnClass(state.quality === q)}
+                      className={getBtnClass(state.presetType === q)}
                     >
                       {q}
                     </button>
@@ -423,81 +417,99 @@ export default function Home() {
 
               <div className="h-8 w-[2px] bg-[var(--border-light)] mx-2 hidden md:block"></div>
 
-              {/* View/Mode Buttons */}
+              {/* Content Source Tabs */}
               <div className="flex flex-col gap-1 items-center">
-                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View Mode</label>
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">Content</label>
                 <div className="flex gap-1 items-center">
                   <button
-                    className={`${getBtnClass(state.patternMode === 'box')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
-                    onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'box' }))}
-                    disabled={state.tuningName !== 'Standard'}
-                    title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
-                  >
-                    Box
-                  </button>
-                  <button
-                    className={`${getBtnClass(state.patternMode === 'waterfall')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed bg-gray-100 text-gray-400' : ''}`}
-                    onClick={() => state.tuningName === 'Standard' && setState(prev => ({ ...prev, patternMode: 'waterfall' }))}
-                    disabled={state.tuningName !== 'Standard'}
-                    title={state.tuningName !== 'Standard' ? "Only available in Standard Tuning" : ""}
-                  >
-                    Waterfall
-                  </button>
-                  <button
-                    className={getBtnClass(state.patternMode === 'edit')}
+                    className={getBtnClass(state.contentSource === 'preset')}
                     onClick={() => {
-                      if (state.patternMode !== 'edit') {
+                      console.log('[CLICK] Preset button → contentSource: preset');
+                      setState(prev => ({ ...prev, contentSource: 'preset', patternMode: 'box' }));
+                    }}
+                  >
+                    Preset
+                  </button>
+                  <button
+                    className={getBtnClass(state.contentSource === 'custom')}
+                    onClick={() => {
+                      if (state.contentSource !== 'custom') {
                         const visibleNotes = calculateFretboardState(state);
                         const existingNotes = visibleNotes.map(n => ({ stringIdx: n.stringIdx, fret: n.fret }));
-
+                        console.log('[CLICK] Custom button → contentSource: custom, snapshotted', existingNotes.length, 'notes');
                         setState(prev => ({
                           ...prev,
-                          patternMode: 'edit',
+                          contentSource: 'custom',
                           customNotes: existingNotes,
-                          previousPatternMode: prev.patternMode
+                          patternMode: 'edit',
                         }));
                       } else {
-                        setState(prev => ({ ...prev, patternMode: 'edit' }));
+                        console.log('[CLICK] Custom button → already in custom mode');
                       }
                     }}
                   >
-                    Edit
+                    Custom
                   </button>
-
                   <button
-                    className={getBtnClass(state.patternMode === 'tab')}
+                    className={getBtnClass(state.contentSource === 'tab')}
                     onClick={() => {
                       if (!fileData) {
                         fileInputRef.current?.click();
                       } else {
-                        setState(prev => ({ ...prev, patternMode: 'tab' }));
+                        setState(prev => ({ ...prev, contentSource: 'tab', patternMode: 'tab' }));
                       }
                     }}
                   >
                     Tab
                   </button>
+                </div>
+              </div>
 
-                  {/* Reset Button */}
+              {/* View Style Toggle */}
+              <div className="flex flex-col gap-1 items-center">
+                <label className="text-[9px] uppercase font-bold text-[var(--text-secondary)]">View</label>
+                <div className="flex gap-1 items-center">
                   <button
-                    onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
-                    className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.patternMode === 'edit'
-                      ? 'bg-red-100 hover:bg-red-200 opacity-100'
-                      : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
-                      }`}
-                    disabled={state.patternMode !== 'edit'}
-                    title="Clear all notes (Edit Mode only)"
+                    className={`${getBtnClass(state.viewStyle === 'box')} ${state.tuningName !== 'Standard' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={() => {
+                      console.log('[CLICK] Box view → viewStyle: box');
+                      state.tuningName === 'Standard' && setState(prev => ({ ...prev, viewStyle: 'box' }));
+                    }}
+                    disabled={state.tuningName !== 'Standard'}
+                    title={state.tuningName !== 'Standard' ? "CAGED box view only available in Standard Tuning" : ""}
                   >
-                    Reset
+                    Box
+                  </button>
+                  <button
+                    className={getBtnClass(state.viewStyle === 'horizontal')}
+                    onClick={() => {
+                      console.log('[CLICK] Horizontal view → viewStyle: horizontal');
+                      setState(prev => ({ ...prev, viewStyle: 'horizontal' }));
+                    }}
+                  >
+                    Horizontal
                   </button>
                 </div>
               </div>
+
+              {/* Reset Button (only enabled in Custom mode) */}
+              <button
+                onClick={() => setState(prev => ({ ...prev, customNotes: [] }))}
+                className={`retro-btn text-[10px] py-1 px-2 border-2 border-[var(--border-dark)] ml-2 transition-all active:translate-y-px active:shadow-none shadow-[2px_2px_0_black] ${state.contentSource === 'custom'
+                  ? 'bg-red-100 hover:bg-red-200 opacity-100'
+                  : 'bg-gray-100 text-gray-400 opacity-50 cursor-not-allowed'
+                  }`}
+                disabled={state.contentSource !== 'custom'}
+                title="Clear all notes (Custom mode only)"
+              >
+                Reset
+              </button>
             </div>
           </InfoPanel>
         </RetroWindow>
 
-        {/* Optional Window: Tab Player (Only visible in Tab Mode or Edit Mode from Tab) */}
-        {/* Optional Window: Tab Player (Only visible in Tab Mode or Edit Mode from Tab) */}
-        {(state.patternMode === 'tab' || (state.patternMode === 'edit' && state.previousPatternMode === 'tab')) && fileData && (
+        {/* Optional Window: Tab Player (Only visible in Tab Mode) */}
+        {state.contentSource === 'tab' && fileData && (
           <RetroWindow
             title="Tab_Viewer.exe"
             className="flex-1 min-h-0 shadow-xl bg-white w-full flex flex-col"
@@ -552,19 +564,24 @@ export default function Home() {
 
                 {/* 5. Sidebar (Right Side) */}
                 <div className="flex flex-col gap-3 items-center justify-center p-2 border-l-2 border-[var(--border-light)] bg-slate-100 w-44 shrink-0">
-                  {state.patternMode === 'tab' ? (
+                  {state.contentSource === 'tab' ? (
                     <>
                       <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center">ROOT NOTE</h3>
                       <div className="w-32 h-32 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-7xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
                         {NOTE_NAMES[state.root]}
                       </div>
                     </>
-                  ) : state.tuningName !== 'Standard' ? (
+                  ) : state.tuningName !== 'Standard' || state.viewStyle === 'horizontal' ? (
                     <>
-                      <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center">TUNING</h3>
-                      <div className="w-32 h-12 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-base text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)] uppercase">
-                        {state.tuningName}
-                      </div>
+                      {/* Show ROOT for horizontal view or non-standard tuning (CAGED doesn't apply) */}
+                      {state.tuningName !== 'Standard' && (
+                        <>
+                          <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] text-center">TUNING</h3>
+                          <div className="w-32 h-12 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-base text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)] uppercase">
+                            {state.tuningName}
+                          </div>
+                        </>
+                      )}
                       <h3 className="text-lg font-bold font-silkscreen text-[var(--text-secondary)] mt-4 text-center">ROOT</h3>
                       <div className="w-32 h-32 flex items-center justify-center font-[family-name:var(--font-silkscreen)] text-7xl pb-4 text-[var(--text-primary)] bg-white border-4 border-[var(--border-dark)] shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1)]">
                         {NOTE_NAMES[state.root]}
@@ -578,13 +595,13 @@ export default function Home() {
                           {(['C', 'A', 'G', 'E', 'D'] as const).map(shape => (
                             <button
                               key={shape}
-                              onClick={() => handleShapeChange(shape)}
+                              onClick={() => handleCagedShapeClick(shape)}
                               className={`
                                 w-10 h-10 flex items-center justify-center 
                                 font-[family-name:var(--font-silkscreen)] text-xl font-bold 
                                 border-2 border-black shadow-[2px_2px_0_black]
                                 transition-all active:translate-y-1 active:shadow-none
-                                ${state.shape === shape
+                                ${state.cagedShape === shape && state.contentSource === 'preset'
                                   ? 'bg-[var(--accent-red)] text-white scale-110 z-10'
                                   : 'bg-white text-black hover:bg-gray-100'}
                               `}
@@ -605,66 +622,75 @@ export default function Home() {
       </div>
 
       {/* Context Menu */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-[#c0c0c0] border-2 border-white shadow-[2px_2px_0_black] p-1 flex flex-col gap-1 min-w-[150px] select-none"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="bg-blue-800 text-white px-2 py-0.5 text-[10px] font-bold mb-1">
-            NOTE OPTIONS
-          </div>
-
-          <button
-            className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white"
-            onClick={() => {
-              const chromaticIdx = (state.tuning[contextMenu.stringIdx] + contextMenu.fret) % 12;
-              setState(prev => ({
-                ...prev,
-                root: chromaticIdx,
-                selectedNote: { stringIdx: contextMenu.stringIdx, fret: contextMenu.fret }
-              }));
-              setContextMenu(null);
-            }}
+      {
+        contextMenu && (
+          <div
+            className="fixed z-50 bg-[#c0c0c0] border-2 border-white shadow-[2px_2px_0_black] p-1 flex flex-col gap-1 min-w-[150px] select-none"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
           >
-            Set as Root
-          </button>
+            <div className="bg-blue-800 text-white px-2 py-0.5 text-[10px] font-bold mb-1">
+              NOTE OPTIONS
+            </div>
 
-          {state.tuningName === 'Standard' && (
             <button
               className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white"
               onClick={() => {
-                const { stringIdx, fret } = contextMenu;
-                const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
-                const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
-
-                if (validShapes && validShapes.length > 0) {
-                  setState(prev => ({
-                    ...prev,
-                    root: chromaticIdx,
-                    shape: validShapes[0], // Default to first valid shape
-                    patternMode: 'box',
-                    selectedNote: { stringIdx, fret }
-                  }));
-                }
+                const chromaticIdx = (state.tuning[contextMenu.stringIdx] + contextMenu.fret) % 12;
+                setState(prev => ({
+                  ...prev,
+                  root: chromaticIdx,
+                  anchor: { stringIdx: contextMenu.stringIdx, fret: contextMenu.fret },
+                  // Keep deprecated field in sync
+                  selectedNote: { stringIdx: contextMenu.stringIdx, fret: contextMenu.fret }
+                }));
                 setContextMenu(null);
               }}
             >
-              Jump to Shape
+              Set as Root
             </button>
-          )}
 
-          <div className="h-px bg-gray-400 my-0.5"></div>
+            {state.tuningName === 'Standard' && (
+              <button
+                className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white"
+                onClick={() => {
+                  const { stringIdx, fret } = contextMenu;
+                  const chromaticIdx = (state.tuning[stringIdx] + fret) % 12;
+                  const validShapes = STRING_TO_SHAPE_MAP[stringIdx];
 
-          <button
-            className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white text-gray-500"
-            onClick={() => setContextMenu(null)}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+                  if (validShapes && validShapes.length > 0) {
+                    setState(prev => ({
+                      ...prev,
+                      root: chromaticIdx,
+                      contentSource: 'preset',
+                      viewStyle: 'box',
+                      cagedShape: validShapes[0],
+                      anchor: { stringIdx, fret },
+                      // Keep deprecated fields in sync
+                      shape: validShapes[0],
+                      patternMode: 'box',
+                      selectedNote: { stringIdx, fret }
+                    }));
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                Jump to Shape
+              </button>
+            )}
 
-    </main>
+            <div className="h-px bg-gray-400 my-0.5"></div>
+
+            <button
+              className="text-left px-2 py-1 hover:bg-blue-700 hover:text-white text-xs font-bold font-sans border border-transparent hover:border-dotted hover:border-white text-gray-500"
+              onClick={() => setContextMenu(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        )
+      }
+
+    </main >
   );
 }
