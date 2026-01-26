@@ -26,7 +26,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
     const [totalBars, setTotalBars] = useState(0);
 
     // Windowing State (The new Logic)
-    const [windowSize, setWindowSize] = useState<2 | 4>(2);
+    const [windowSize, setWindowSize] = useState<1 | 2 | 4>(1);
     const [currentStartBar, setCurrentStartBar] = useState(1);
     // currentEndBar is computed: currentStartBar + windowSize - 1
 
@@ -214,7 +214,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
     };
 
     const handleWindowSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newSize = parseInt(e.target.value) as 2 | 4;
+        const newSize = parseInt(e.target.value) as 1 | 2 | 4;
         setWindowSize(newSize);
         updateWindow(currentStartBar, newSize, tracks[activeTrackIndex]);
     };
@@ -373,6 +373,7 @@ export const AlphaTabPlayer: React.FC<AlphaTabPlayerProps> = ({ fileData, onNote
                             title="Window Size"
                             className="text-xs border text-center h-6 w-16 bg-white"
                         >
+                            <option value={1}>1 Bar</option>
                             <option value={2}>2 Bars</option>
                             <option value={4}>4 Bars</option>
                         </select>
